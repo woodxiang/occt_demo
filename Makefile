@@ -18,7 +18,7 @@ OpenCASCADE_MODULES := freetype TKRWMesh TKBinXCAF TKBin TKBinL TKOpenGl TKXCAF 
 
 LIBS:= $(foreach V, $(OpenCASCADE_MODULES),	$(OpenCASCADE_LIB_DIR)/lib$(V).a)
 
-CPPFLAGS += -g -fdebug-compilation-dir="."
+CPPFLAGS += -g -fdebug-compilation-dir="../"
 CPPFLAGS += -I$(OpenCASCADE_INCLUDE_DIR)
 
 %.o: %.cpp
@@ -31,7 +31,7 @@ main.o: src/main.cpp
 	$(CXX) $(CPPFLAGS) -c -o $@ $<
 
 js/demo_app.js: main.o $(lib1_OBJS)
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS)
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1
 
 clean:
 	$(RM) -r *.o js/*.wasm js/*.js src/views/*.o

@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "wasm",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "~/git/emsdk/upstream/emscripten/system/include/**",
+                "~/git/emsdk/upstream/emscripten/cache/sysroot/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-clang-x64"
+        }
+    ],
+    "version": 4
+}
