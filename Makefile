@@ -30,8 +30,11 @@ all: js/demo_app.js
 main.o: src/main.cpp
 	$(CXX) $(CPPFLAGS) -c -o $@ $<
 
-js/demo_app.js: main.o $(lib1_OBJS)
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1
+model_factory.o: src/model_factory.cpp
+	$(CXX) $(CPPFLAGS) -c -o $@ $<
+
+js/demo_app.js: main.o model_factory.o $(lib1_OBJS)
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o model_factory.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1
 
 clean:
 	$(RM) -r *.o js/*.wasm js/*.js src/views/*.o
