@@ -22,7 +22,18 @@ void onMainLoop()
     emscripten_cancel_main_loop();
 }
 
-extern "C" void onFileDataRead(void *theOpaque, void *theBuffer, int theDataLen)
+extern "C" float* test(int x, int y)
+{
+    std::cout << "input (" << x << ", " << y << ")" << std::endl;
+    auto pdata = new float[3];
+    pdata[0] = 1.1;
+    pdata[1] = 1.2;
+    pdata[2] = 1.3;
+
+    return pdata;
+}
+
+void onFileDataRead(void *theOpaque, void *theBuffer, int theDataLen)
 {
     const char *aName = theOpaque != NULL ? (const char *)theOpaque : "";
     {

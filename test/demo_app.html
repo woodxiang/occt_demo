@@ -1,38 +1,63 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Emscripten-Generated Code</title>
+  </head>
 
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>Emscripten-Generated Code</title>
-</head>
+  <body>
+    <div>
+      <input type="button" id="testButton" />
+    </div>
+    <div>
+      <canvas
+        id="canvas"
+        width="1024"
+        height="768"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
 
-<body>
-  <div class="emscripten_border">
-    <canvas class="emscripten" id="canvas" width="640" height="480" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
-  </div>
+    <script type="text/javascript">
+      var Module = {
+        canvas: (function () {
+          var canvas = document.getElementById("canvas");
 
-  <script type='text/javascript'>
+          // As a default initial behavior, pop up an alert when webgl context is lost. To make your
+          // application robust, you may want to override this behavior before shipping!
+          // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+          canvas.addEventListener(
+            "webglcontextlost",
+            function (e) {
+              alert("WebGL context lost. You will need to reload the page.");
+              e.preventDefault();
+            },
+            false
+          );
 
-    var Module = {
-      canvas: (function () {
-        var canvas = document.getElementById('canvas');
+          return canvas;
+        })(),
 
-        // As a default initial behavior, pop up an alert when webgl context is lost. To make your
-        // application robust, you may want to override this behavior before shipping!
-        // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
-        canvas.addEventListener("webglcontextlost", function (e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+        totalDependencies: 0,
+        monitorRunDependencies: function (left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+        },
+      };
 
-        return canvas;
-      })(),
-      
-      totalDependencies: 0,
-      monitorRunDependencies: function (left) {
-        this.totalDependencies = Math.max(this.totalDependencies, left);
-      }
-    };
-  </script>
-  <script async type="text/javascript" src="../js/demo_app.js"></script>
-</body>
+      testButton.onclick = () => {
+        const ret = _test(1, 2);
+        if (ret != 0) {
+          var view = new DataView(Module.HEAPF32.buffer.slice(ret));
+          var x = view.getFloat32(0, true);
+          var y = view.getFloat32(4, true);
+          var z = view.getFloat32(8, true);
 
+          console.log("result is ({x}, {y}, {z})");
+        }
+      };
+    </script>
+    <script async type="text/javascript" src="../js/demo_app.js"></script>
+  </body>
 </html>
