@@ -49,6 +49,8 @@ public: //! @name methods exported by Module
   //! @param theAuto [in] fit selected objects (TRUE) or all objects (FALSE)
   static void fitAllObjects(bool theAuto);
 
+  static void testAction();
+
   //! Remove named object from viewer.
   //! @param theName [in] object name
   //! @return FALSE if object was not found

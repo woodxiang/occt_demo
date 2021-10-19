@@ -44,6 +44,8 @@
 
 #include <iostream>
 
+#include "../model_factory.h"
+
 #define THE_CANVAS_ID "canvas"
 
 namespace
@@ -425,7 +427,7 @@ void OcctView::redrawView()
 // Purpose  :
 // ================================================================
 void OcctView::handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
-                                    const Handle(V3d_View) & theView)
+                                const Handle(V3d_View) & theView)
 {
   myUpdateRequests = 0;
   AIS_ViewController::handleViewRedraw(theCtx, theView);
@@ -522,8 +524,8 @@ EM_BOOL OcctView::onTouchEvent(int theEventType, const EmscriptenTouchEvent *the
 // Purpose  :
 // ================================================================
 bool OcctView::navigationKeyModifierSwitch(unsigned int theModifOld,
-                                               unsigned int theModifNew,
-                                               double theTimeStamp)
+                                           unsigned int theModifNew,
+                                           double theTimeStamp)
 {
   bool hasActions = false;
   for (unsigned int aKeyIter = 0; aKeyIter < Aspect_VKey_ModifiersLower; ++aKeyIter)
@@ -574,8 +576,8 @@ EM_BOOL OcctView::onKeyDownEvent(int theEventType, const EmscriptenKeyboardEvent
 //purpose  :
 //=======================================================================
 void OcctView::KeyDown(Aspect_VKey theKey,
-                           double theTime,
-                           double thePressure)
+                       double theTime,
+                       double thePressure)
 {
   const unsigned int aModifOld = myKeys.Modifiers();
   AIS_ViewController::KeyDown(theKey, theTime, thePressure);
@@ -613,7 +615,7 @@ EM_BOOL OcctView::onKeyUpEvent(int theEventType, const EmscriptenKeyboardEvent *
 //purpose  :
 //=======================================================================
 void OcctView::KeyUp(Aspect_VKey theKey,
-                         double theTime)
+                     double theTime)
 {
   const unsigned int aModifOld = myKeys.Modifiers();
   AIS_ViewController::KeyUp(theKey, theTime);
@@ -763,7 +765,7 @@ bool OcctView::displayObject(const std::string &theName)
 // Purpose  :
 // ================================================================
 void OcctView::openFromUrl(const std::string &theName,
-                               const std::string &theModelPath)
+                           const std::string &theModelPath)
 {
   ModelAsyncLoader *aTask = new ModelAsyncLoader(theName.c_str(), theModelPath.c_str());
   emscripten_async_wget_data(theModelPath.c_str(), (void *)aTask, ModelAsyncLoader::onDataRead, ModelAsyncLoader::onReadFailed);
@@ -774,8 +776,8 @@ void OcctView::openFromUrl(const std::string &theName,
 // Purpose  :
 // ================================================================
 bool OcctView::openFromMemory(const std::string &theName,
-                                  uintptr_t theBuffer, int theDataLen,
-                                  bool theToFree)
+                              uintptr_t theBuffer, int theDataLen,
+                              bool theToFree)
 {
   removeObject(theName);
   char *aBytes = reinterpret_cast<char *>(theBuffer);
@@ -804,13 +806,34 @@ bool OcctView::openFromMemory(const std::string &theName,
   return false;
 }
 
+void OcctView::testAction()
+{
+  removeAllObjects();
+
+  std::string theName = "TestObject";
+  OcctView &aViewer = Instance();
+  auto aShape = ModelFactory::GetInstance()->MakeBottle(10, 20, 5);
+  Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
+  if (!theName.empty())
+  {
+    aViewer.myObjects.Add(theName.c_str(), aShapePrs);
+  }
+  aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
+  aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+  aViewer.View()->FitAll(0.01, false);
+  aViewer.UpdateView();
+
+  Message::DefaultMessenger()->Send(TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
+}
+
 // ================================================================
 // Function : openBRepFromMemory
 // Purpose  :
 // ================================================================
 bool OcctView::openBRepFromMemory(const std::string &theName,
-                                      uintptr_t theBuffer, int theDataLen,
-                                      bool theToFree)
+                                  uintptr_t theBuffer, int theDataLen,
+                                  bool theToFree)
 {
   removeObject(theName);
 
@@ -920,4 +943,5 @@ EMSCRIPTEN_BINDINGS(OccViewerModule)
   emscripten::function("openFromUrl", &OcctView::openFromUrl);
   emscripten::function("openFromMemory", &OcctView::openFromMemory, emscripten::allow_raw_pointers());
   emscripten::function("openBRepFromMemory", &OcctView::openBRepFromMemory, emscripten::allow_raw_pointers());
+  emscripten::function("testAction", &OcctView::testAction);
 }

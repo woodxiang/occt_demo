@@ -41,6 +41,8 @@ ModelFactory *ModelFactory::GetInstance()
     return instance_;
 }
 
+ModelFactory *ModelFactory::instance_ = nullptr;
+
 TopoDS_Shape ModelFactory::MakeBottle(const Standard_Real myWidth, const Standard_Real myHeight,
                                       const Standard_Real myThickness)
 {
