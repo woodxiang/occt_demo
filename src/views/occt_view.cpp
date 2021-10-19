@@ -21,17 +21,26 @@
 
 #include "occt_view.h"
 
-#include "occt_virtual_keys.h"
-
 #include <AIS_Shape.hxx>
 #include <AIS_ViewCube.hxx>
 #include <Aspect_Handle.hxx>
 #include <Aspect_DisplayConnection.hxx>
-#include <Aspect_NeutralWindow.hxx>
+#include <Image_AlienPixMap.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
+#include <Graphic3d_CubeMapPacked.hxx>
 #include <OpenGl_GraphicDriver.hxx>
 #include <Prs3d_DatumAspect.hxx>
+#include <Prs3d_ToolCylinder.hxx>
+#include <Prs3d_ToolDisk.hxx>
+#include <Wasm_Window.hxx>
+
+#include <BRep_Builder.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepTools.hxx>
+#include <Standard_ArrayStreamBuffer.hxx>
+
+#include <emscripten/bind.h>
 
 #include <iostream>
 
@@ -39,25 +48,64 @@
 
 namespace
 {
-  EM_JS(int, js_canvas_get_width, (), {
-    return canvas.width;
-  });
-
-  EM_JS(int, js_canvas_get_height, (), {
-    return canvas.height;
-  });
-
-  EM_JS(float, js_device_pixel_ratio, (),
-        {
-          var aDevicePixelRatio = window.devicePixelRatio || 1;
-          return aDevicePixelRatio;
-        });
-
-  //! Return cavas size in pixels.
-  static Graphic3d_Vec2i js_canvas_size()
+  //! Auxiliary wrapper for loading model.
+  struct ModelAsyncLoader
   {
-    return Graphic3d_Vec2i(js_canvas_get_width(), js_canvas_get_height());
-  }
+    std::string Name;
+    std::string Path;
+
+    ModelAsyncLoader(const char *theName, const char *thePath)
+        : Name(theName), Path(thePath) {}
+
+    //! File data read event.
+    static void onDataRead(void *theOpaque, void *theBuffer, int theDataLen)
+    {
+      const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
+      OcctView::openFromMemory(aTask->Name, reinterpret_cast<uintptr_t>(theBuffer), theDataLen, false);
+      delete aTask;
+    }
+
+    //! File read error event.
+    static void onReadFailed(void *theOpaque)
+    {
+      const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
+      Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: unable to load file ") + aTask->Path.c_str(), Message_Fail);
+      delete aTask;
+    }
+  };
+
+  //! Auxiliary wrapper for loading cubemap.
+  struct CubemapAsyncLoader
+  {
+    //! Image file read event.
+    static void onImageRead(const char *theFilePath)
+    {
+      Handle(Graphic3d_CubeMapPacked) aCubemap;
+      Handle(Image_AlienPixMap) anImage = new Image_AlienPixMap();
+      if (anImage->Load(theFilePath))
+      {
+        aCubemap = new Graphic3d_CubeMapPacked(anImage);
+      }
+      OcctView::Instance().View()->SetBackgroundCubeMap(aCubemap, true, false);
+      OcctView::Instance().UpdateView();
+    }
+
+    //! Image file failed read event.
+    static void onImageFailed(const char *theFilePath)
+    {
+      Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: unable to load image ") + theFilePath, Message_Fail);
+    }
+  };
+}
+
+// ================================================================
+// Function : Instance
+// Purpose  :
+// ================================================================
+OcctView &OcctView::Instance()
+{
+  static OcctView aViewer;
+  return aViewer;
 }
 
 // ================================================================
@@ -65,9 +113,31 @@ namespace
 // Purpose  :
 // ================================================================
 OcctView::OcctView()
-    : device_pixel_ratio_(1.0f),
-      update_requests_(0)
+    : myDevicePixelRatio(1.0f),
+      myUpdateRequests(0)
 {
+  addActionHotKeys(Aspect_VKey_NavForward, Aspect_VKey_W, Aspect_VKey_W | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavBackward, Aspect_VKey_S, Aspect_VKey_S | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSlideLeft, Aspect_VKey_A, Aspect_VKey_A | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSlideRight, Aspect_VKey_D, Aspect_VKey_D | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavRollCCW, Aspect_VKey_Q, Aspect_VKey_Q | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavRollCW, Aspect_VKey_E, Aspect_VKey_E | Aspect_VKeyFlags_SHIFT);
+
+  addActionHotKeys(Aspect_VKey_NavSpeedIncrease, Aspect_VKey_Plus, Aspect_VKey_Plus | Aspect_VKeyFlags_SHIFT,
+                   Aspect_VKey_Equal,
+                   Aspect_VKey_NumpadAdd, Aspect_VKey_NumpadAdd | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSpeedDecrease, Aspect_VKey_Minus, Aspect_VKey_Minus | Aspect_VKeyFlags_SHIFT,
+                   Aspect_VKey_NumpadSubtract, Aspect_VKey_NumpadSubtract | Aspect_VKeyFlags_SHIFT);
+
+  // arrow keys conflict with browser page scrolling, so better be avoided in non-fullscreen mode
+  addActionHotKeys(Aspect_VKey_NavLookUp, Aspect_VKey_Numpad8);     // Aspect_VKey_Up
+  addActionHotKeys(Aspect_VKey_NavLookDown, Aspect_VKey_Numpad2);   // Aspect_VKey_Down
+  addActionHotKeys(Aspect_VKey_NavLookLeft, Aspect_VKey_Numpad4);   // Aspect_VKey_Left
+  addActionHotKeys(Aspect_VKey_NavLookRight, Aspect_VKey_Numpad6);  // Aspect_VKey_Right
+  addActionHotKeys(Aspect_VKey_NavSlideLeft, Aspect_VKey_Numpad1);  // Aspect_VKey_Left |Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(Aspect_VKey_NavSlideRight, Aspect_VKey_Numpad3); // Aspect_VKey_Right|Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(Aspect_VKey_NavSlideUp, Aspect_VKey_Numpad9);    // Aspect_VKey_Up   |Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(Aspect_VKey_NavSlideDown, Aspect_VKey_Numpad7);  // Aspect_VKey_Down |Aspect_VKeyFlags_SHIFT
 }
 
 // ================================================================
@@ -82,20 +152,20 @@ OcctView::~OcctView()
 // Function : run
 // Purpose  :
 // ================================================================
-void OcctView::Run()
+void OcctView::run()
 {
   initWindow();
   initViewer();
   initDemoScene();
-  if (v3d_view_.IsNull())
+  if (myView.IsNull())
   {
     return;
   }
 
-  v3d_view_->MustBeResized();
-  v3d_view_->Redraw();
+  myView->MustBeResized();
+  myView->Redraw();
 
-  // There is no inifinite message loop, main() will return from here immediately.
+  // There is no infinite message loop, main() will return from here immediately.
   // Tell that our Module should be left loaded and handle events through callbacks.
   //emscripten_set_main_loop (redrawView, 60, 1);
   //emscripten_set_main_loop (redrawView, -1, 1);
@@ -108,9 +178,9 @@ void OcctView::Run()
 // ================================================================
 void OcctView::initWindow()
 {
-  device_pixel_ratio_ = js_device_pixel_ratio();
-  canvas_id_ = THE_CANVAS_ID;
-  const char *aTargetId = !canvas_id_.IsEmpty() ? canvas_id_.ToCString() : EMSCRIPTEN_EVENT_TARGET_WINDOW;
+  myDevicePixelRatio = emscripten_get_device_pixel_ratio();
+  myCanvasId = THE_CANVAS_ID;
+  const char *aTargetId = !myCanvasId.IsEmpty() ? myCanvasId.ToCString() : EMSCRIPTEN_EVENT_TARGET_WINDOW;
   const EM_BOOL toUseCapture = EM_TRUE;
   emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, toUseCapture, onResizeCallback);
 
@@ -140,7 +210,7 @@ void OcctView::initWindow()
 void OcctView::dumpGlInfo(bool theIsBasic)
 {
   TColStd_IndexedDataMapOfStringString aGlCapsDict;
-  v3d_view_->DiagnosticInformation(aGlCapsDict, theIsBasic ? Graphic3d_DiagnosticInfo_Basic : Graphic3d_DiagnosticInfo_Complete);
+  myView->DiagnosticInformation(aGlCapsDict, theIsBasic ? Graphic3d_DiagnosticInfo_Basic : Graphic3d_DiagnosticInfo_Complete);
   if (theIsBasic)
   {
     TCollection_AsciiString aViewport;
@@ -148,7 +218,7 @@ void OcctView::dumpGlInfo(bool theIsBasic)
     aGlCapsDict.Clear();
     aGlCapsDict.Add("Viewport", aViewport);
   }
-  aGlCapsDict.Add("Display scale", TCollection_AsciiString(device_pixel_ratio_));
+  aGlCapsDict.Add("Display scale", TCollection_AsciiString(myDevicePixelRatio));
 
   // beautify output
   {
@@ -183,24 +253,24 @@ void OcctView::dumpGlInfo(bool theIsBasic)
 // ================================================================
 void OcctView::initPixelScaleRatio()
 {
-  SetTouchToleranceScale(device_pixel_ratio_);
-  if (!v3d_view_.IsNull())
+  SetTouchToleranceScale(myDevicePixelRatio);
+  if (!myView.IsNull())
   {
-    v3d_view_->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * device_pixel_ratio_ + 0.5);
+    myView->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
   }
-  if (!interactive_context_.IsNull())
+  if (!myContext.IsNull())
   {
-    interactive_context_->SetPixelTolerance(int(device_pixel_ratio_ * 6.0));
-    if (!view_cube_.IsNull())
+    myContext->SetPixelTolerance(int(myDevicePixelRatio * 6.0));
+    if (!myViewCube.IsNull())
     {
       static const double THE_CUBE_SIZE = 60.0;
-      view_cube_->SetSize(device_pixel_ratio_ * THE_CUBE_SIZE, false);
-      view_cube_->SetBoxFacetExtension(view_cube_->Size() * 0.15);
-      view_cube_->SetAxesPadding(view_cube_->Size() * 0.10);
-      view_cube_->SetFontHeight(THE_CUBE_SIZE * 0.16);
-      if (view_cube_->HasInteractiveContext())
+      myViewCube->SetSize(myDevicePixelRatio * THE_CUBE_SIZE, false);
+      myViewCube->SetBoxFacetExtension(myViewCube->Size() * 0.15);
+      myViewCube->SetAxesPadding(myViewCube->Size() * 0.10);
+      myViewCube->SetFontHeight(THE_CUBE_SIZE * 0.16);
+      if (myViewCube->HasInteractiveContext())
       {
-        interactive_context_->Redisplay(view_cube_, false);
+        myContext->Redisplay(myViewCube, false);
       }
     }
   }
@@ -226,7 +296,8 @@ bool OcctView::initViewer()
 
   Handle(Aspect_DisplayConnection) aDisp;
   Handle(OpenGl_GraphicDriver) aDriver = new OpenGl_GraphicDriver(aDisp, false);
-  aDriver->ChangeOptions().buffersNoSwap = true; // swap has no effect in WebGL
+  aDriver->ChangeOptions().buffersNoSwap = true;      // swap has no effect in WebGL
+  aDriver->ChangeOptions().buffersOpaqueAlpha = true; // avoid unexpected blending of canvas with page background
   if (!aDriver->InitContext())
   {
     Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: EGL initialization failed"), Message_Fail);
@@ -238,36 +309,41 @@ bool OcctView::initViewer()
   aViewer->SetDefaultShadingModel(Graphic3d_TOSM_FRAGMENT);
   aViewer->SetDefaultLights();
   aViewer->SetLightOn();
-
-  Handle(Aspect_NeutralWindow) aWindow = new Aspect_NeutralWindow();
-  Graphic3d_Vec2i aWinSize = js_canvas_size();
-  if (aWinSize.x() < 10 || aWinSize.y() < 10)
+  for (V3d_ListOfLight::Iterator aLightIter(aViewer->ActiveLights()); aLightIter.More(); aLightIter.Next())
   {
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("Warning: invalid canvas size"), Message_Warning);
+    const Handle(V3d_Light) &aLight = aLightIter.Value();
+    if (aLight->Type() == Graphic3d_TypeOfLightSource_Directional)
+    {
+      aLight->SetCastShadows(true);
+    }
   }
-  aWindow->SetSize(aWinSize.x(), aWinSize.y());
 
-  text_style_ = new Prs3d_TextAspect();
-  text_style_->SetFont(Font_NOF_ASCII_MONO);
-  text_style_->SetHeight(12);
-  text_style_->Aspect()->SetColor(Quantity_NOC_GRAY95);
-  text_style_->Aspect()->SetColorSubTitle(Quantity_NOC_BLACK);
-  text_style_->Aspect()->SetDisplayType(Aspect_TODT_SHADOW);
-  text_style_->Aspect()->SetTextFontAspect(Font_FA_Bold);
-  text_style_->Aspect()->SetTextZoomable(false);
-  text_style_->SetHorizontalJustification(Graphic3d_HTA_LEFT);
-  text_style_->SetVerticalJustification(Graphic3d_VTA_BOTTOM);
+  Handle(Wasm_Window) aWindow = new Wasm_Window(THE_CANVAS_ID);
+  aWindow->Size(myWinSizeOld.x(), myWinSizeOld.y());
 
-  v3d_view_ = new V3d_View(aViewer);
-  v3d_view_->SetImmediateUpdate(false);
-  v3d_view_->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * device_pixel_ratio_ + 0.5);
-  v3d_view_->ChangeRenderingParams().ToShowStats = true;
-  v3d_view_->ChangeRenderingParams().StatsTextAspect = text_style_->Aspect();
-  v3d_view_->ChangeRenderingParams().StatsTextHeight = (int)text_style_->Height();
-  v3d_view_->SetWindow(aWindow);
+  myTextStyle = new Prs3d_TextAspect();
+  myTextStyle->SetFont(Font_NOF_ASCII_MONO);
+  myTextStyle->SetHeight(12);
+  myTextStyle->Aspect()->SetColor(Quantity_NOC_GRAY95);
+  myTextStyle->Aspect()->SetColorSubTitle(Quantity_NOC_BLACK);
+  myTextStyle->Aspect()->SetDisplayType(Aspect_TODT_SHADOW);
+  myTextStyle->Aspect()->SetTextFontAspect(Font_FA_Bold);
+  myTextStyle->Aspect()->SetTextZoomable(false);
+  myTextStyle->SetHorizontalJustification(Graphic3d_HTA_LEFT);
+  myTextStyle->SetVerticalJustification(Graphic3d_VTA_BOTTOM);
+
+  myView = new V3d_View(aViewer);
+  myView->Camera()->SetProjectionType(Graphic3d_Camera::Projection_Perspective);
+  myView->SetImmediateUpdate(false);
+  myView->ChangeRenderingParams().IsShadowEnabled = false;
+  myView->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
+  myView->ChangeRenderingParams().ToShowStats = true;
+  myView->ChangeRenderingParams().StatsTextAspect = myTextStyle->Aspect();
+  myView->ChangeRenderingParams().StatsTextHeight = (int)myTextStyle->Height();
+  myView->SetWindow(aWindow);
   dumpGlInfo(false);
 
-  interactive_context_ = new AIS_InteractiveContext(aViewer);
+  myContext = new AIS_InteractiveContext(aViewer);
   initPixelScaleRatio();
   return true;
 }
@@ -278,40 +354,57 @@ bool OcctView::initViewer()
 // ================================================================
 void OcctView::initDemoScene()
 {
-  if (interactive_context_.IsNull())
+  if (myContext.IsNull())
   {
     return;
   }
 
   //myView->TriedronDisplay (Aspect_TOTP_LEFT_LOWER, Quantity_NOC_GOLD, 0.08, V3d_WIREFRAME);
 
-  view_cube_ = new AIS_ViewCube();
+  myViewCube = new AIS_ViewCube();
   // presentation parameters
   initPixelScaleRatio();
-  view_cube_->SetTransformPersistence(new Graphic3d_TransformPers(Graphic3d_TMF_TriedronPers, Aspect_TOTP_RIGHT_LOWER, Graphic3d_Vec2i(100, 100)));
-  view_cube_->Attributes()->SetDatumAspect(new Prs3d_DatumAspect());
-  view_cube_->Attributes()->DatumAspect()->SetTextAspect(text_style_);
+  myViewCube->SetTransformPersistence(new Graphic3d_TransformPers(Graphic3d_TMF_TriedronPers, Aspect_TOTP_RIGHT_LOWER, Graphic3d_Vec2i(100, 100)));
+  myViewCube->Attributes()->SetDatumAspect(new Prs3d_DatumAspect());
+  myViewCube->Attributes()->DatumAspect()->SetTextAspect(myTextStyle);
   // animation parameters
-  view_cube_->SetViewAnimation(myViewAnimation);
-  view_cube_->SetFixedAnimationLoop(false);
-  view_cube_->SetAutoStartAnimation(true);
-  interactive_context_->Display(view_cube_, false);
+  myViewCube->SetViewAnimation(myViewAnimation);
+  myViewCube->SetFixedAnimationLoop(false);
+  myViewCube->SetAutoStartAnimation(true);
+  myContext->Display(myViewCube, false);
 
   // Build with "--preload-file MySampleFile.brep" option to load some shapes here.
 }
 
 // ================================================================
-// Function : updateView
+// Function : ProcessInput
 // Purpose  :
 // ================================================================
-void OcctView::updateView()
+void OcctView::ProcessInput()
 {
-  if (!v3d_view_.IsNull())
+  if (!myView.IsNull())
   {
-    if (++update_requests_ == 1)
+    // Queue onRedrawView()/redrawView callback to redraw canvas after all user input is flushed by browser.
+    // Redrawing viewer on every single message would be a pointless waste of resources,
+    // as user will see only the last drawn frame due to WebGL implementation details.
+    if (++myUpdateRequests == 1)
     {
       emscripten_async_call(onRedrawView, this, 0);
     }
+  }
+}
+
+// ================================================================
+// Function : UpdateView
+// Purpose  :
+// ================================================================
+void OcctView::UpdateView()
+{
+  if (!myView.IsNull())
+  {
+    myView->Invalidate();
+    // queue next onRedrawView()/redrawView()
+    ProcessInput();
   }
 }
 
@@ -321,9 +414,9 @@ void OcctView::updateView()
 // ================================================================
 void OcctView::redrawView()
 {
-  if (!v3d_view_.IsNull())
+  if (!myView.IsNull())
   {
-    FlushViewEvents(interactive_context_, v3d_view_, true);
+    FlushViewEvents(myContext, myView, true);
   }
 }
 
@@ -334,12 +427,12 @@ void OcctView::redrawView()
 void OcctView::handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
                                     const Handle(V3d_View) & theView)
 {
-  update_requests_ = 0;
+  myUpdateRequests = 0;
   AIS_ViewController::handleViewRedraw(theCtx, theView);
   if (myToAskNextFrame)
   {
     // ask more frames
-    ++update_requests_;
+    ++myUpdateRequests;
     emscripten_async_call(onRedrawView, this, 0);
   }
 }
@@ -352,30 +445,28 @@ EM_BOOL OcctView::onResizeEvent(int theEventType, const EmscriptenUiEvent *theEv
 {
   (void)theEventType; // EMSCRIPTEN_EVENT_RESIZE or EMSCRIPTEN_EVENT_CANVASRESIZED
   (void)theEvent;
-  if (v3d_view_.IsNull())
+  if (myView.IsNull())
   {
     return EM_FALSE;
   }
 
-  Handle(Aspect_NeutralWindow) aWindow = Handle(Aspect_NeutralWindow)::DownCast(v3d_view_->Window());
-  Graphic3d_Vec2i aWinSizeOld, aWinSizeNew(js_canvas_size());
-  if (aWinSizeNew.x() < 10 || aWinSizeNew.y() < 10)
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  Graphic3d_Vec2i aWinSizeNew;
+  aWindow->DoResize();
+  aWindow->Size(aWinSizeNew.x(), aWinSizeNew.y());
+  const float aPixelRatio = emscripten_get_device_pixel_ratio();
+  if (aWinSizeNew != myWinSizeOld || aPixelRatio != myDevicePixelRatio)
   {
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("Warning: invalid canvas size"), Message_Warning);
-  }
-  aWindow->Size(aWinSizeOld.x(), aWinSizeOld.y());
-  const float aPixelRatio = js_device_pixel_ratio();
-  if (aWinSizeNew != aWinSizeOld || aPixelRatio != device_pixel_ratio_)
-  {
-    if (device_pixel_ratio_ != aPixelRatio)
+    myWinSizeOld = aWinSizeNew;
+    if (myDevicePixelRatio != aPixelRatio)
     {
-      device_pixel_ratio_ = aPixelRatio;
+      myDevicePixelRatio = aPixelRatio;
       initPixelScaleRatio();
     }
-    aWindow->SetSize(aWinSizeNew.x(), aWinSizeNew.y());
-    v3d_view_->MustBeResized();
-    v3d_view_->Invalidate();
-    v3d_view_->Redraw();
+
+    myView->MustBeResized();
+    myView->Invalidate();
+    myView->Redraw();
     dumpGlInfo(true);
   }
   return EM_TRUE;
@@ -387,86 +478,13 @@ EM_BOOL OcctView::onResizeEvent(int theEventType, const EmscriptenUiEvent *theEv
 // ================================================================
 EM_BOOL OcctView::onMouseEvent(int theEventType, const EmscriptenMouseEvent *theEvent)
 {
-  if (v3d_view_.IsNull())
+  if (myView.IsNull())
   {
     return EM_FALSE;
   }
 
-  Graphic3d_Vec2i aWinSize;
-  v3d_view_->Window()->Size(aWinSize.x(), aWinSize.y());
-  const Graphic3d_Vec2i aNewPos = convertPointToBacking(Graphic3d_Vec2i(theEvent->targetX, theEvent->targetY));
-  Aspect_VKeyFlags aFlags = 0;
-  if (theEvent->ctrlKey == EM_TRUE)
-  {
-    aFlags |= Aspect_VKeyFlags_CTRL;
-  }
-  if (theEvent->shiftKey == EM_TRUE)
-  {
-    aFlags |= Aspect_VKeyFlags_SHIFT;
-  }
-  if (theEvent->altKey == EM_TRUE)
-  {
-    aFlags |= Aspect_VKeyFlags_ALT;
-  }
-  if (theEvent->metaKey == EM_TRUE)
-  {
-    aFlags |= Aspect_VKeyFlags_META;
-  }
-
-  const bool isEmulated = false;
-  const Aspect_VKeyMouse aButtons = virtual_keys_mouse_buttons_from_native(theEvent->buttons);
-  switch (theEventType)
-  {
-  case EMSCRIPTEN_EVENT_MOUSEMOVE:
-  {
-    if ((aNewPos.x() < 0 || aNewPos.x() > aWinSize.x() || aNewPos.y() < 0 || aNewPos.y() > aWinSize.y()) && PressedMouseButtons() == Aspect_VKeyMouse_NONE)
-    {
-      return EM_FALSE;
-    }
-    if (UpdateMousePosition(aNewPos, aButtons, aFlags, isEmulated))
-    {
-      updateView();
-    }
-    break;
-  }
-  case EMSCRIPTEN_EVENT_MOUSEDOWN:
-  case EMSCRIPTEN_EVENT_MOUSEUP:
-  {
-    if (aNewPos.x() < 0 || aNewPos.x() > aWinSize.x() || aNewPos.y() < 0 || aNewPos.y() > aWinSize.y())
-    {
-      return EM_FALSE;
-    }
-    if (UpdateMouseButtons(aNewPos, aButtons, aFlags, isEmulated))
-    {
-      updateView();
-    }
-    break;
-  }
-  case EMSCRIPTEN_EVENT_CLICK:
-  case EMSCRIPTEN_EVENT_DBLCLICK:
-  {
-    if (aNewPos.x() < 0 || aNewPos.x() > aWinSize.x() || aNewPos.y() < 0 || aNewPos.y() > aWinSize.y())
-    {
-      return EM_FALSE;
-    }
-    break;
-  }
-  case EMSCRIPTEN_EVENT_MOUSEENTER:
-  {
-    break;
-  }
-  case EMSCRIPTEN_EVENT_MOUSELEAVE:
-  {
-    // there is no SetCapture() support, so that mouse unclick events outside canvas will not arrive,
-    // so we have to forget current state...
-    if (UpdateMouseButtons(aNewPos, Aspect_VKeyMouse_NONE, aFlags, isEmulated))
-    {
-      updateView();
-    }
-    break;
-  }
-  }
-  return EM_TRUE;
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  return aWindow->ProcessMouseEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
 }
 
 // ================================================================
@@ -475,44 +493,13 @@ EM_BOOL OcctView::onMouseEvent(int theEventType, const EmscriptenMouseEvent *the
 // ================================================================
 EM_BOOL OcctView::onWheelEvent(int theEventType, const EmscriptenWheelEvent *theEvent)
 {
-  if (v3d_view_.IsNull() || theEventType != EMSCRIPTEN_EVENT_WHEEL)
+  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_WHEEL)
   {
     return EM_FALSE;
   }
 
-  Graphic3d_Vec2i aWinSize;
-  v3d_view_->Window()->Size(aWinSize.x(), aWinSize.y());
-  const Graphic3d_Vec2i aNewPos = convertPointToBacking(Graphic3d_Vec2i(theEvent->mouse.targetX, theEvent->mouse.targetY));
-  if (aNewPos.x() < 0 || aNewPos.x() > aWinSize.x() || aNewPos.y() < 0 || aNewPos.y() > aWinSize.y())
-  {
-    return EM_FALSE;
-  }
-
-  double aDelta = 0.0;
-  switch (theEvent->deltaMode)
-  {
-  case DOM_DELTA_PIXEL:
-  {
-    aDelta = theEvent->deltaY / (5.0 * device_pixel_ratio_);
-    break;
-  }
-  case DOM_DELTA_LINE:
-  {
-    aDelta = theEvent->deltaY * 8.0;
-    break;
-  }
-  case DOM_DELTA_PAGE:
-  {
-    aDelta = theEvent->deltaY >= 0.0 ? 24.0 : -24.0;
-    break;
-  }
-  }
-
-  if (UpdateZoom(Aspect_ScrollDelta(aNewPos, -aDelta)))
-  {
-    updateView();
-  }
-  return EM_TRUE;
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  return aWindow->ProcessWheelEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
 }
 
 // ================================================================
@@ -521,86 +508,50 @@ EM_BOOL OcctView::onWheelEvent(int theEventType, const EmscriptenWheelEvent *the
 // ================================================================
 EM_BOOL OcctView::onTouchEvent(int theEventType, const EmscriptenTouchEvent *theEvent)
 {
-  const double aClickTolerance = 5.0;
-  if (v3d_view_.IsNull())
+  if (myView.IsNull())
   {
     return EM_FALSE;
   }
 
-  Graphic3d_Vec2i aWinSize;
-  v3d_view_->Window()->Size(aWinSize.x(), aWinSize.y());
-  bool hasUpdates = false;
-  for (int aTouchIter = 0; aTouchIter < theEvent->numTouches; ++aTouchIter)
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  return aWindow->ProcessTouchEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+}
+
+// ================================================================
+// Function : navigationKeyModifierSwitch
+// Purpose  :
+// ================================================================
+bool OcctView::navigationKeyModifierSwitch(unsigned int theModifOld,
+                                               unsigned int theModifNew,
+                                               double theTimeStamp)
+{
+  bool hasActions = false;
+  for (unsigned int aKeyIter = 0; aKeyIter < Aspect_VKey_ModifiersLower; ++aKeyIter)
   {
-    const EmscriptenTouchPoint &aTouch = theEvent->touches[aTouchIter];
-    if (!aTouch.isChanged)
+    if (!myKeys.IsKeyDown(aKeyIter))
     {
       continue;
     }
 
-    const Standard_Size aTouchId = (Standard_Size)aTouch.identifier;
-    const Graphic3d_Vec2i aNewPos = convertPointToBacking(Graphic3d_Vec2i(aTouch.canvasX, aTouch.canvasY));
-    switch (theEventType)
+    Aspect_VKey anActionOld = Aspect_VKey_UNKNOWN, anActionNew = Aspect_VKey_UNKNOWN;
+    myNavKeyMap.Find(aKeyIter | theModifOld, anActionOld);
+    myNavKeyMap.Find(aKeyIter | theModifNew, anActionNew);
+    if (anActionOld == anActionNew)
     {
-    case EMSCRIPTEN_EVENT_TOUCHSTART:
-    {
-      if (aNewPos.x() >= 0 && aNewPos.x() < aWinSize.x() && aNewPos.y() >= 0 && aNewPos.y() < aWinSize.y())
-      {
-        hasUpdates = true;
-        AddTouchPoint(aTouchId, Graphic3d_Vec2d(aNewPos));
-        click_touch_.From.SetValues(-1.0, -1.0);
-        if (myTouchPoints.Extent() == 1)
-        {
-          click_touch_.From = Graphic3d_Vec2d(aNewPos);
-        }
-      }
-      break;
+      continue;
     }
-    case EMSCRIPTEN_EVENT_TOUCHMOVE:
+
+    if (anActionOld != Aspect_VKey_UNKNOWN)
     {
-      const int anOldIndex = myTouchPoints.FindIndex(aTouchId);
-      if (anOldIndex != 0)
-      {
-        hasUpdates = true;
-        UpdateTouchPoint(aTouchId, Graphic3d_Vec2d(aNewPos));
-        if (myTouchPoints.Extent() == 1 && (click_touch_.From - Graphic3d_Vec2d(aNewPos)).cwiseAbs().maxComp() > aClickTolerance)
-        {
-          click_touch_.From.SetValues(-1.0, -1.0);
-        }
-      }
-      break;
+      myKeys.KeyUp(anActionOld, theTimeStamp);
     }
-    case EMSCRIPTEN_EVENT_TOUCHEND:
-    case EMSCRIPTEN_EVENT_TOUCHCANCEL:
+    if (anActionNew != Aspect_VKey_UNKNOWN)
     {
-      if (RemoveTouchPoint(aTouchId))
-      {
-        if (myTouchPoints.IsEmpty() && click_touch_.From.minComp() >= 0.0)
-        {
-          if (double_tap_timer_.IsStarted() && double_tap_timer_.ElapsedTime() <= myMouseDoubleClickInt)
-          {
-            v3d_view_->FitAll(0.01, false);
-            v3d_view_->Invalidate();
-          }
-          else
-          {
-            double_tap_timer_.Stop();
-            double_tap_timer_.Reset();
-            double_tap_timer_.Start();
-            SelectInViewer(Graphic3d_Vec2i(click_touch_.From), false);
-          }
-        }
-        hasUpdates = true;
-      }
-      break;
-    }
+      hasActions = true;
+      myKeys.KeyDown(anActionNew, theTimeStamp);
     }
   }
-  if (hasUpdates)
-  {
-    updateView();
-  }
-  return hasUpdates || !myTouchPoints.IsEmpty() ? EM_TRUE : EM_FALSE;
+  return hasActions;
 }
 
 // ================================================================
@@ -609,28 +560,37 @@ EM_BOOL OcctView::onTouchEvent(int theEventType, const EmscriptenTouchEvent *the
 // ================================================================
 EM_BOOL OcctView::onKeyDownEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent)
 {
-  if (v3d_view_.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYDOWN) // EMSCRIPTEN_EVENT_KEYPRESS
+  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYDOWN) // EMSCRIPTEN_EVENT_KEYPRESS
   {
     return EM_FALSE;
   }
 
-  const double aTimeStamp = EventTime();
-  const Aspect_VKey aVKey = virtual_keys_virtual_key_from_native(theEvent->keyCode);
-  if (aVKey == Aspect_VKey_UNKNOWN)
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+}
+
+//=======================================================================
+//function : KeyDown
+//purpose  :
+//=======================================================================
+void OcctView::KeyDown(Aspect_VKey theKey,
+                           double theTime,
+                           double thePressure)
+{
+  const unsigned int aModifOld = myKeys.Modifiers();
+  AIS_ViewController::KeyDown(theKey, theTime, thePressure);
+
+  const unsigned int aModifNew = myKeys.Modifiers();
+  if (aModifNew != aModifOld && navigationKeyModifierSwitch(aModifOld, aModifNew, theTime))
   {
-    return EM_FALSE;
+    // modifier key just pressed
   }
 
-  if (theEvent->repeat == EM_FALSE)
+  Aspect_VKey anAction = Aspect_VKey_UNKNOWN;
+  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) && anAction != Aspect_VKey_UNKNOWN)
   {
-    myKeys.KeyDown(aVKey, aTimeStamp);
+    AIS_ViewController::KeyDown(anAction, theTime, thePressure);
   }
-
-  if (Aspect_VKey2Modifier(aVKey) == 0)
-  {
-    // normal key
-  }
-  return EM_FALSE;
 }
 
 // ================================================================
@@ -639,38 +599,325 @@ EM_BOOL OcctView::onKeyDownEvent(int theEventType, const EmscriptenKeyboardEvent
 // ================================================================
 EM_BOOL OcctView::onKeyUpEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent)
 {
-  if (v3d_view_.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYUP)
+  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYUP)
   {
     return EM_FALSE;
   }
 
-  const double aTimeStamp = EventTime();
-  const Aspect_VKey aVKey = virtual_keys_virtual_key_from_native(theEvent->keyCode);
-  if (aVKey == Aspect_VKey_UNKNOWN)
+  Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
+  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+}
+
+//=======================================================================
+//function : KeyUp
+//purpose  :
+//=======================================================================
+void OcctView::KeyUp(Aspect_VKey theKey,
+                         double theTime)
+{
+  const unsigned int aModifOld = myKeys.Modifiers();
+  AIS_ViewController::KeyUp(theKey, theTime);
+
+  Aspect_VKey anAction = Aspect_VKey_UNKNOWN;
+  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) && anAction != Aspect_VKey_UNKNOWN)
   {
-    return EM_FALSE;
+    AIS_ViewController::KeyUp(anAction, theTime);
+    processKeyPress(anAction);
   }
 
-  if (theEvent->repeat == EM_TRUE)
+  const unsigned int aModifNew = myKeys.Modifiers();
+  if (aModifNew != aModifOld && navigationKeyModifierSwitch(aModifOld, aModifNew, theTime))
   {
-    return EM_FALSE;
+    // modifier key released
   }
 
-  const unsigned int aModif = myKeys.Modifiers();
-  myKeys.KeyUp(aVKey, aTimeStamp);
-  if (Aspect_VKey2Modifier(aVKey) == 0)
+  processKeyPress(theKey | aModifNew);
+}
+
+//==============================================================================
+//function : processKeyPress
+//purpose  :
+//==============================================================================
+bool OcctView::processKeyPress(Aspect_VKey theKey)
+{
+  switch (theKey)
   {
-    // normal key released
-    switch (aVKey | aModif)
+  case Aspect_VKey_F:
+  {
+    myView->FitAll(0.01, false);
+    UpdateView();
+    return true;
+  }
+  }
+  return false;
+}
+
+// ================================================================
+// Function : setCubemapBackground
+// Purpose  :
+// ================================================================
+void OcctView::setCubemapBackground(const std::string &theImagePath)
+{
+  if (!theImagePath.empty())
+  {
+    emscripten_async_wget(theImagePath.c_str(), "/emulated/cubemap.jpg", CubemapAsyncLoader::onImageRead, CubemapAsyncLoader::onImageFailed);
+  }
+  else
+  {
+    OcctView::Instance().View()->SetBackgroundCubeMap(Handle(Graphic3d_CubeMapPacked)(), true, false);
+    OcctView::Instance().UpdateView();
+  }
+}
+
+// ================================================================
+// Function : fitAllObjects
+// Purpose  :
+// ================================================================
+void OcctView::fitAllObjects(bool theAuto)
+{
+  OcctView &aViewer = Instance();
+  if (theAuto)
+  {
+    aViewer.FitAllAuto(aViewer.Context(), aViewer.View());
+  }
+  else
+  {
+    aViewer.View()->FitAll(0.01, false);
+  }
+  aViewer.UpdateView();
+}
+
+// ================================================================
+// Function : removeAllObjects
+// Purpose  :
+// ================================================================
+void OcctView::removeAllObjects()
+{
+  OcctView &aViewer = Instance();
+  for (NCollection_IndexedDataMap<TCollection_AsciiString, Handle(AIS_InteractiveObject)>::Iterator anObjIter(aViewer.myObjects);
+       anObjIter.More(); anObjIter.Next())
+  {
+    aViewer.Context()->Remove(anObjIter.Value(), false);
+  }
+  aViewer.myObjects.Clear();
+  aViewer.UpdateView();
+}
+
+// ================================================================
+// Function : removeObject
+// Purpose  :
+// ================================================================
+bool OcctView::removeObject(const std::string &theName)
+{
+  OcctView &aViewer = Instance();
+  Handle(AIS_InteractiveObject) anObj;
+  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
+  {
+    return false;
+  }
+
+  aViewer.Context()->Remove(anObj, false);
+  aViewer.myObjects.RemoveKey(theName.c_str());
+  aViewer.UpdateView();
+  return true;
+}
+
+// ================================================================
+// Function : eraseObject
+// Purpose  :
+// ================================================================
+bool OcctView::eraseObject(const std::string &theName)
+{
+  OcctView &aViewer = Instance();
+  Handle(AIS_InteractiveObject) anObj;
+  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
+  {
+    return false;
+  }
+
+  aViewer.Context()->Erase(anObj, false);
+  aViewer.UpdateView();
+  return true;
+}
+
+// ================================================================
+// Function : displayObject
+// Purpose  :
+// ================================================================
+bool OcctView::displayObject(const std::string &theName)
+{
+  OcctView &aViewer = Instance();
+  Handle(AIS_InteractiveObject) anObj;
+  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
+  {
+    return false;
+  }
+
+  aViewer.Context()->Display(anObj, false);
+  aViewer.UpdateView();
+  return true;
+}
+
+// ================================================================
+// Function : openFromUrl
+// Purpose  :
+// ================================================================
+void OcctView::openFromUrl(const std::string &theName,
+                               const std::string &theModelPath)
+{
+  ModelAsyncLoader *aTask = new ModelAsyncLoader(theName.c_str(), theModelPath.c_str());
+  emscripten_async_wget_data(theModelPath.c_str(), (void *)aTask, ModelAsyncLoader::onDataRead, ModelAsyncLoader::onReadFailed);
+}
+
+// ================================================================
+// Function : openFromMemory
+// Purpose  :
+// ================================================================
+bool OcctView::openFromMemory(const std::string &theName,
+                                  uintptr_t theBuffer, int theDataLen,
+                                  bool theToFree)
+{
+  removeObject(theName);
+  char *aBytes = reinterpret_cast<char *>(theBuffer);
+  if (aBytes == nullptr || theDataLen <= 0)
+  {
+    return false;
+  }
+
+// Function to check if specified data stream starts with specified header.
+#define dataStartsWithHeader(theData, theHeader) (::strncmp(theData, theHeader, sizeof(theHeader) - 1) == 0)
+
+  if (dataStartsWithHeader(aBytes, "DBRep_DrawableShape"))
+  {
+    return openBRepFromMemory(theName, theBuffer, theDataLen, theToFree);
+  }
+  else if (dataStartsWithHeader(aBytes, "glTF"))
+  {
+    //return openGltfFromMemory (theName, theBuffer, theDataLen, theToFree);
+  }
+  if (theToFree)
+  {
+    free(aBytes);
+  }
+
+  Message::SendFail() << "Error: file '" << theName.c_str() << "' has unsupported format";
+  return false;
+}
+
+// ================================================================
+// Function : openBRepFromMemory
+// Purpose  :
+// ================================================================
+bool OcctView::openBRepFromMemory(const std::string &theName,
+                                      uintptr_t theBuffer, int theDataLen,
+                                      bool theToFree)
+{
+  removeObject(theName);
+
+  OcctView &aViewer = Instance();
+  TopoDS_Shape aShape;
+  BRep_Builder aBuilder;
+  bool isLoaded = false;
+  {
+    char *aRawData = reinterpret_cast<char *>(theBuffer);
+    Standard_ArrayStreamBuffer aStreamBuffer(aRawData, theDataLen);
+    std::istream aStream(&aStreamBuffer);
+    BRepTools::Read(aShape, aStream, aBuilder);
+    if (theToFree)
     {
-    case Aspect_VKey_F:
-    {
-      v3d_view_->FitAll(0.01, false);
-      v3d_view_->Invalidate();
-      updateView();
-      return EM_TRUE;
+      free(aRawData);
     }
-    }
+    isLoaded = true;
   }
-  return EM_FALSE;
+  if (!isLoaded)
+  {
+    return false;
+  }
+
+  Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
+  if (!theName.empty())
+  {
+    aViewer.myObjects.Add(theName.c_str(), aShapePrs);
+  }
+  aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
+  aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+  aViewer.View()->FitAll(0.01, false);
+  aViewer.UpdateView();
+
+  Message::DefaultMessenger()->Send(TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
+  return true;
+}
+
+// ================================================================
+// Function : displayGround
+// Purpose  :
+// ================================================================
+void OcctView::displayGround(bool theToShow)
+{
+  static Handle(AIS_Shape) aGroundPrs = new AIS_Shape(TopoDS_Shape());
+
+  OcctView &aViewer = Instance();
+  Bnd_Box aBox;
+  if (theToShow)
+  {
+    aViewer.Context()->Remove(aGroundPrs, false);
+    aBox = aViewer.View()->View()->MinMaxValues();
+  }
+  if (aBox.IsVoid() || aBox.IsZThin(Precision::Confusion()))
+  {
+    if (!aGroundPrs.IsNull() && aGroundPrs->HasInteractiveContext())
+    {
+      aViewer.Context()->Remove(aGroundPrs, false);
+      aViewer.UpdateView();
+    }
+    return;
+  }
+
+  const gp_XYZ aSize = aBox.CornerMax().XYZ() - aBox.CornerMin().XYZ();
+  const double aRadius = Max(aSize.X(), aSize.Y());
+  const double aZValue = aBox.CornerMin().Z() - Min(10.0, aSize.Z() * 0.01);
+  const double aZSize = aRadius * 0.01;
+  gp_XYZ aGroundCenter((aBox.CornerMin().X() + aBox.CornerMax().X()) * 0.5,
+                       (aBox.CornerMin().Y() + aBox.CornerMax().Y()) * 0.5,
+                       aZValue);
+
+  TopoDS_Compound aGround;
+  gp_Trsf aTrsf1, aTrsf2;
+  aTrsf1.SetTranslation(gp_Vec(aGroundCenter - gp_XYZ(0.0, 0.0, aZSize)));
+  aTrsf2.SetTranslation(gp_Vec(aGroundCenter));
+  Prs3d_ToolCylinder aCylTool(aRadius, aRadius, aZSize, 50, 1);
+  Prs3d_ToolDisk aDiskTool(0.0, aRadius, 50, 1);
+  TopoDS_Face aCylFace, aDiskFace1, aDiskFace2;
+  BRep_Builder().MakeFace(aCylFace, aCylTool.CreatePolyTriangulation(aTrsf1));
+  BRep_Builder().MakeFace(aDiskFace1, aDiskTool.CreatePolyTriangulation(aTrsf1));
+  BRep_Builder().MakeFace(aDiskFace2, aDiskTool.CreatePolyTriangulation(aTrsf2));
+
+  BRep_Builder().MakeCompound(aGround);
+  BRep_Builder().Add(aGround, aCylFace);
+  BRep_Builder().Add(aGround, aDiskFace1);
+  BRep_Builder().Add(aGround, aDiskFace2);
+
+  aGroundPrs->SetShape(aGround);
+  aGroundPrs->SetToUpdate();
+  aGroundPrs->SetMaterial(Graphic3d_NameOfMaterial_Stone);
+  aGroundPrs->SetInfiniteState(false);
+  aViewer.Context()->Display(aGroundPrs, AIS_Shaded, -1, false);
+  aGroundPrs->SetInfiniteState(true);
+  aViewer.UpdateView();
+}
+
+// Module exports
+EMSCRIPTEN_BINDINGS(OccViewerModule)
+{
+  emscripten::function("setCubemapBackground", &OcctView::setCubemapBackground);
+  emscripten::function("fitAllObjects", &OcctView::fitAllObjects);
+  emscripten::function("removeAllObjects", &OcctView::removeAllObjects);
+  emscripten::function("removeObject", &OcctView::removeObject);
+  emscripten::function("eraseObject", &OcctView::eraseObject);
+  emscripten::function("displayObject", &OcctView::displayObject);
+  emscripten::function("displayGround", &OcctView::displayGround);
+  emscripten::function("openFromUrl", &OcctView::openFromUrl);
+  emscripten::function("openFromMemory", &OcctView::openFromMemory, emscripten::allow_raw_pointers());
+  emscripten::function("openBRepFromMemory", &OcctView::openBRepFromMemory, emscripten::allow_raw_pointers());
 }

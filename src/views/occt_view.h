@@ -33,6 +33,69 @@ class AIS_ViewCube;
 class OcctView : protected AIS_ViewController
 {
 public:
+  //! Return global viewer instance.
+  static OcctView &Instance();
+
+public: //! @name methods exported by Module
+  //! Set cubemap background.
+  //! File will be loaded asynchronously.
+  //! @param theImagePath [in] image path to load
+  static void setCubemapBackground(const std::string &theImagePath);
+
+  //! Clear all named objects from viewer.
+  static void removeAllObjects();
+
+  //! Fit all/selected objects into view.
+  //! @param theAuto [in] fit selected objects (TRUE) or all objects (FALSE)
+  static void fitAllObjects(bool theAuto);
+
+  //! Remove named object from viewer.
+  //! @param theName [in] object name
+  //! @return FALSE if object was not found
+  static bool removeObject(const std::string &theName);
+
+  //! Temporarily hide named object.
+  //! @param theName [in] object name
+  //! @return FALSE if object was not found
+  static bool eraseObject(const std::string &theName);
+
+  //! Display temporarily hidden object.
+  //! @param theName [in] object name
+  //! @return FALSE if object was not found
+  static bool displayObject(const std::string &theName);
+
+  //! Show/hide ground.
+  //! @param theToShow [in] show or hide flag
+  static void displayGround(bool theToShow);
+
+  //! Open object from the given URL.
+  //! File will be loaded asynchronously.
+  //! @param theName      [in] object name
+  //! @param theModelPath [in] model path
+  static void openFromUrl(const std::string &theName,
+                          const std::string &theModelPath);
+
+  //! Open object from memory.
+  //! @param theName    [in] object name
+  //! @param theBuffer  [in] pointer to data
+  //! @param theDataLen [in] data length
+  //! @param theToFree  [in] free theBuffer if set to TRUE
+  //! @return FALSE on reading error
+  static bool openFromMemory(const std::string &theName,
+                             uintptr_t theBuffer, int theDataLen,
+                             bool theToFree);
+
+  //! Open BRep object from memory.
+  //! @param theName    [in] object name
+  //! @param theBuffer  [in] pointer to data
+  //! @param theDataLen [in] data length
+  //! @param theToFree  [in] free theBuffer if set to TRUE
+  //! @return FALSE on reading error
+  static bool openBRepFromMemory(const std::string &theName,
+                                 uintptr_t theBuffer, int theDataLen,
+                                 bool theToFree);
+
+public:
   //! Default constructor.
   OcctView();
 
@@ -40,16 +103,19 @@ public:
   virtual ~OcctView();
 
   //! Main application entry point.
-  void Run();
+  void run();
 
   //! Return interactive context.
-  const Handle(AIS_InteractiveContext) & Context() const { return interactive_context_; }
+  const Handle(AIS_InteractiveContext) & Context() const { return myContext; }
 
   //! Return view.
-  const Handle(V3d_View) & View() const { return v3d_view_; }
+  const Handle(V3d_View) & View() const { return myView; }
 
   //! Return device pixel ratio for handling high DPI displays.
-  float DevicePixelRatio() const { return device_pixel_ratio_; }
+  float DevicePixelRatio() const { return myDevicePixelRatio; }
+
+  //! Request view redrawing.
+  void UpdateView();
 
 private:
   //! Create window.
@@ -64,9 +130,6 @@ private:
   //! Application event loop.
   void mainloop();
 
-  //! Request view redrawing.
-  void updateView();
-
   //! Flush events and redraw view.
   void redrawView();
 
@@ -74,24 +137,23 @@ private:
   virtual void handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
                                 const Handle(V3d_View) & theView) override;
 
+  //! Schedule processing of window input events with the next repaint event.
+  virtual void ProcessInput() override;
+
+  //! Handle key down event.
+  virtual void KeyDown(Aspect_VKey theKey,
+                       double theTime,
+                       double thePressure) override;
+
+  //! Handle key up event.
+  virtual void KeyUp(Aspect_VKey theKey,
+                     double theTime) override;
+
   //! Dump WebGL context information.
   void dumpGlInfo(bool theIsBasic);
 
   //! Initialize pixel scale ratio.
   void initPixelScaleRatio();
-
-  //! Return point from logical units to backing store.
-  Graphic3d_Vec2d convertPointToBacking(const Graphic3d_Vec2d &thePnt) const
-  {
-    return thePnt * device_pixel_ratio_;
-  }
-
-  //! Return point from logical units to backing store.
-  Graphic3d_Vec2i convertPointToBacking(const Graphic3d_Vec2i &thePnt) const
-  {
-    Graphic3d_Vec2d aPnt = Graphic3d_Vec2d(thePnt) * device_pixel_ratio_ + Graphic3d_Vec2d(0.5);
-    return Graphic3d_Vec2i(aPnt);
-  }
 
   //! @name Emscripten callbacks
 private:
@@ -151,13 +213,55 @@ private:
   }
 
 private:
-  Handle(AIS_InteractiveContext) interactive_context_; //!< interactive context
-  Handle(V3d_View) v3d_view_;                  //!< 3D view
-  Handle(Prs3d_TextAspect) text_style_;     //!< text style for OSD elements
-  Handle(AIS_ViewCube) view_cube_;          //!< view cube object
-  TCollection_AsciiString canvas_id_;       //!< canvas element id on HTML page
-  Aspect_Touch click_touch_;                //!< single touch position for handling clicks
-  OSD_Timer double_tap_timer_;               //!< timer for handling double tap
-  float device_pixel_ratio_;                 //!< device pixel ratio for handling high DPI displays
-  unsigned int update_requests_;            //!< counter for unhandled update requests
+  //! Register hot-keys for specified Action.
+  void addActionHotKeys(Aspect_VKey theAction,
+                        unsigned int theHotKey1 = 0,
+                        unsigned int theHotKey2 = 0,
+                        unsigned int theHotKey3 = 0,
+                        unsigned int theHotKey4 = 0,
+                        unsigned int theHotKey5 = 0)
+  {
+    if (theHotKey1 != 0)
+    {
+      myNavKeyMap.Bind(theHotKey1, theAction);
+    }
+    if (theHotKey2 != 0)
+    {
+      myNavKeyMap.Bind(theHotKey2, theAction);
+    }
+    if (theHotKey3 != 0)
+    {
+      myNavKeyMap.Bind(theHotKey3, theAction);
+    }
+    if (theHotKey4 != 0)
+    {
+      myNavKeyMap.Bind(theHotKey4, theAction);
+    }
+    if (theHotKey5 != 0)
+    {
+      myNavKeyMap.Bind(theHotKey5, theAction);
+    }
+  }
+
+  //! Handle navigation keys.
+  bool navigationKeyModifierSwitch(unsigned int theModifOld,
+                                   unsigned int theModifNew,
+                                   double theTimeStamp);
+
+  //! Handle hot-key.
+  bool processKeyPress(Aspect_VKey theKey);
+
+private:
+  NCollection_IndexedDataMap<TCollection_AsciiString, Handle(AIS_InteractiveObject)> myObjects; //!< map of named objects
+
+  NCollection_DataMap<unsigned int, Aspect_VKey> myNavKeyMap; //!< map of Hot-Key (key+modifiers) to Action
+
+  Handle(AIS_InteractiveContext) myContext; //!< interactive context
+  Handle(V3d_View) myView;                  //!< 3D view
+  Handle(Prs3d_TextAspect) myTextStyle;     //!< text style for OSD elements
+  Handle(AIS_ViewCube) myViewCube;          //!< view cube object
+  TCollection_AsciiString myCanvasId;       //!< canvas element id on HTML page
+  Graphic3d_Vec2i myWinSizeOld;
+  float myDevicePixelRatio;      //!< device pixel ratio for handling high DPI displays
+  unsigned int myUpdateRequests; //!< counter for unhandled update requests
 };

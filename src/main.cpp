@@ -1,28 +1,24 @@
 #include <iostream>
+
+#include "./views/occt_view.h"
+
+#include <Message.hxx>
+#include <Message_Messenger.hxx>
+#include <Message_PrinterSystemLog.hxx>
+#include <OSD_MemInfo.hxx>
+#include <OSD_Parallel.hxx>
+
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
-#include "views/occt_view.h"
-#include "model_factory.h"
-
-#include <Standard_ArrayStreamBuffer.hxx>
-#include <TopoDS_Shape.hxx>
-#include <BRep_Builder.hxx>
-#include <BRepTools.hxx>
-#include <AIS_Shape.hxx>
-
-#include <Message.hxx>
-#include <Message_PrinterSystemLog.hxx>
-#include <OSD_Parallel.hxx>
-
-static OcctView canvas_view;
-
-void onMainLoop()
+//! Dummy main loop callback for a single shot.
+extern "C" void onMainLoop()
 {
+    // do nothing here - viewer updates are handled on demand
     emscripten_cancel_main_loop();
 }
 
-extern "C" float* test(int x, int y)
+extern "C" float *test(int x, int y)
 {
     std::cout << "input (" << x << ", " << y << ")" << std::endl;
     auto pdata = new float[3];
@@ -33,82 +29,31 @@ extern "C" float* test(int x, int y)
     return pdata;
 }
 
-void onFileDataRead(void *theOpaque, void *theBuffer, int theDataLen)
+EMSCRIPTEN_KEEPALIVE int main()
 {
-    const char *aName = theOpaque != NULL ? (const char *)theOpaque : "";
-    {
-        AIS_ListOfInteractive aShapes;
-        canvas_view.Context()->DisplayedObjects(AIS_KOI_Shape, -1, aShapes);
-        for (AIS_ListOfInteractive::Iterator aShapeIter(aShapes); aShapeIter.More(); aShapeIter.Next())
-        {
-            canvas_view.Context()->Remove(aShapeIter.Value(), false);
-        }
-    }
-
-    Standard_ArrayStreamBuffer aStreamBuffer((const char *)theBuffer, theDataLen);
-    std::istream aStream(&aStreamBuffer);
-    TopoDS_Shape aShape;
-    BRep_Builder aBuilder;
-    BRepTools::Read(aShape, aStream, aBuilder);
-
-    Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
-    aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
-    canvas_view.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
-    canvas_view.View()->FitAll(0.01, false);
-    canvas_view.View()->Redraw();
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("Loaded file ") + aName, Message_Info);
-    Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
-}
-
-void AddBottle()
-{
-    {
-        AIS_ListOfInteractive aShapes;
-        canvas_view.Context()->DisplayedObjects(AIS_KOI_Shape, -1, aShapes);
-        for (AIS_ListOfInteractive::Iterator aShapeIter(aShapes); aShapeIter.More(); aShapeIter.Next())
-        {
-            canvas_view.Context()->Remove(aShapeIter.Value(), false);
-        }
-    }
-
-    // define variables.
-    Standard_Real myWidth = 100;
-    Standard_Real myThickness = 20;
-    Standard_Real myHeight = 120;
-
-    TopoDS_Shape bottle = ModelFactory::GetInstance()->MakeBottle(myWidth, myHeight, myThickness);
-
-    Handle(AIS_Shape) aShapePrs = new AIS_Shape(bottle);
-    aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
-    canvas_view.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
-    canvas_view.View()->FitAll(0.01, false);
-    canvas_view.View()->Redraw();
-}
-
-//! File read error event.
-static void onFileReadFailed(void *theOpaque)
-{
-    const char *aName = (const char *)theOpaque;
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: unable to load file ") + aName, Message_Fail);
-}
-
-int main()
-{
-#ifdef __EMSCRIPTEN__
-    std::cout << "__EMSCRIPTEN__ Defined." << std::endl;
-#endif
     Message::DefaultMessenger()->Printers().First()->SetTraceLevel(Message_Trace);
-    Handle(Message_PrinterSystemLog) js_console_printer = new Message_PrinterSystemLog("webgl-sample", Message_Trace);
-    Message::DefaultMessenger()->AddPrinter(js_console_printer);
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("NbLogicalProcessors: ") + OSD_Parallel::NbLogicalProcessors(), Message_Trace);
+    Handle(Message_PrinterSystemLog) aJSConsolePrinter = new Message_PrinterSystemLog("webgl-sample", Message_Trace);
+    Message::DefaultMessenger()->AddPrinter(aJSConsolePrinter); // open JavaScript console within the Browser to see this output
+    Message::SendTrace() << "Emscripten SDK " << __EMSCRIPTEN_major__ << "." << __EMSCRIPTEN_minor__ << "." << __EMSCRIPTEN_tiny__;
+#if defined(__LP64__)
+    Message::SendTrace() << "Architecture: WASM 64-bit";
+#else
+    Message::SendTrace() << "Architecture: WASM 32-bit";
+#endif
+    Message::SendTrace() << "NbLogicalProcessors: "
+                         << OSD_Parallel::NbLogicalProcessors()
+#ifdef __EMSCRIPTEN_PTHREADS__
+                         << " (pthreads ON)"
+#else
+                         << " (pthreads OFF)"
+#endif
+        ;
 
+    // setup a dummy single-shot main loop callback just to shut up a useless Emscripten error message on calling eglSwapInterval()
     emscripten_set_main_loop(onMainLoop, -1, 0);
 
-    canvas_view.Run();
-
+    OcctView &aViewer = OcctView::Instance();
+    aViewer.run();
     Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
-
-    // load some file
-    // emscripten_async_wget_data("samples/Ball.brep", (void *)"samples/Ball.brep", onFileDataRead, onFileReadFailed);
-    AddBottle();
+    return 0;
 }
