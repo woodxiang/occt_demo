@@ -1,0 +1,17 @@
+{
+  "files.associations": {
+    "chrono": "cpp",
+    "random": "cpp",
+    "fstream": "cpp",
+    "iosfwd": "cpp",
+    "istream": "cpp",
+    "sstream": "c",
+    "*.tcc": "c",
+    "ostream": "c",
+    "memory": "cpp",
+    "functional": "cpp",
+    "streambuf": "cpp",
+    "locale": "cpp"
+  },
+  "C_Cpp.clang_format_fallbackStyle": "Google"
+}

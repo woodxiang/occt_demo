@@ -43,13 +43,13 @@ protected:
 			switch (seekDir)
 			{
 			case std::ios_base::beg:
-				this->setp(this->pbase(), this->pbase() + offset, this->epptr());
+				this->setp(this->pbase(), this->pbase() + offset);
 				break;
 			case std::ios_base::end:
-				this->setp(this->pbase(), this->epptr() + offset, this->epptr());
+				this->setp(this->pbase(), this->epptr() + offset);
 				break;
 			default:
-				this->setp(this->pbase(), this->pptr() + offset, this->epptr());
+				this->setp(this->pbase(), this->pptr() + offset);
 				break;
 			}
 

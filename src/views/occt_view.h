@@ -1,6 +1,7 @@
 // Copyright (c) 2019 OPEN CASCADE SAS
 //
-// This file is part of the examples of the Open CASCADE Technology software library.
+// This file is part of the examples of the Open CASCADE Technology software
+// library.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -9,34 +10,34 @@
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 //
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 //
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE
 #pragma once
+
+#include <emscripten.h>
+#include <emscripten/html5.h>
 
 #include <AIS_InteractiveContext.hxx>
 #include <AIS_ViewController.hxx>
 #include <V3d_View.hxx>
 
-#include <emscripten.h>
-#include <emscripten/html5.h>
-
 class AIS_ViewCube;
 
 //! Sample class creating 3D Viewer within Emscripten canvas.
-class OcctView : protected AIS_ViewController
-{
-public:
+class OcctView : protected AIS_ViewController {
+ public:
   //! Return global viewer instance.
   static OcctView &Instance();
 
-public: //! @name methods exported by Module
+ public:  //! @name methods exported by Module
   //! Set cubemap background.
   //! File will be loaded asynchronously.
   //! @param theImagePath [in] image path to load
@@ -83,9 +84,8 @@ public: //! @name methods exported by Module
   //! @param theDataLen [in] data length
   //! @param theToFree  [in] free theBuffer if set to TRUE
   //! @return FALSE on reading error
-  static bool openFromMemory(const std::string &theName,
-                             uintptr_t theBuffer, int theDataLen,
-                             bool theToFree);
+  static bool openFromMemory(const std::string &theName, uintptr_t theBuffer,
+                             int theDataLen, bool theToFree);
 
   //! Open BRep object from memory.
   //! @param theName    [in] object name
@@ -97,7 +97,11 @@ public: //! @name methods exported by Module
                                  uintptr_t theBuffer, int theDataLen,
                                  bool theToFree);
 
-public:
+  static bool openStlFromMemory(const std::string &theName,
+                                 uintptr_t theBuffer, int theDataLen,
+                                 bool theToFree);
+
+ public:
   //! Default constructor.
   OcctView();
 
@@ -119,7 +123,7 @@ public:
   //! Request view redrawing.
   void UpdateView();
 
-private:
+ private:
   //! Create window.
   void initWindow();
 
@@ -143,13 +147,11 @@ private:
   virtual void ProcessInput() override;
 
   //! Handle key down event.
-  virtual void KeyDown(Aspect_VKey theKey,
-                       double theTime,
+  virtual void KeyDown(Aspect_VKey theKey, double theTime,
                        double thePressure) override;
 
   //! Handle key up event.
-  virtual void KeyUp(Aspect_VKey theKey,
-                     double theTime) override;
+  virtual void KeyUp(Aspect_VKey theKey, double theTime) override;
 
   //! Dump WebGL context information.
   void dumpGlInfo(bool theIsBasic);
@@ -158,7 +160,7 @@ private:
   void initPixelScaleRatio();
 
   //! @name Emscripten callbacks
-private:
+ private:
   //! Window resize event.
   EM_BOOL onResizeEvent(int theEventType, const EmscriptenUiEvent *theEvent);
 
@@ -172,75 +174,75 @@ private:
   EM_BOOL onTouchEvent(int theEventType, const EmscriptenTouchEvent *theEvent);
 
   //! Key down event.
-  EM_BOOL onKeyDownEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent);
+  EM_BOOL onKeyDownEvent(int theEventType,
+                         const EmscriptenKeyboardEvent *theEvent);
 
   //! Key up event.
-  EM_BOOL onKeyUpEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent);
+  EM_BOOL onKeyUpEvent(int theEventType,
+                       const EmscriptenKeyboardEvent *theEvent);
 
   //! @name Emscripten callbacks (static functions)
-private:
-  static EM_BOOL onResizeCallback(int theEventType, const EmscriptenUiEvent *theEvent, void *theView)
-  {
+ private:
+  static EM_BOOL onResizeCallback(int theEventType,
+                                  const EmscriptenUiEvent *theEvent,
+                                  void *theView) {
     return ((OcctView *)theView)->onResizeEvent(theEventType, theEvent);
   }
 
-  static void onRedrawView(void *theView)
-  {
+  static void onRedrawView(void *theView) {
     return ((OcctView *)theView)->redrawView();
   }
 
-  static EM_BOOL onMouseCallback(int theEventType, const EmscriptenMouseEvent *theEvent, void *theView)
-  {
+  static EM_BOOL onMouseCallback(int theEventType,
+                                 const EmscriptenMouseEvent *theEvent,
+                                 void *theView) {
     return ((OcctView *)theView)->onMouseEvent(theEventType, theEvent);
   }
 
-  static EM_BOOL onWheelCallback(int theEventType, const EmscriptenWheelEvent *theEvent, void *theView)
-  {
+  static EM_BOOL onWheelCallback(int theEventType,
+                                 const EmscriptenWheelEvent *theEvent,
+                                 void *theView) {
     return ((OcctView *)theView)->onWheelEvent(theEventType, theEvent);
   }
 
-  static EM_BOOL onTouchCallback(int theEventType, const EmscriptenTouchEvent *theEvent, void *theView)
-  {
+  static EM_BOOL onTouchCallback(int theEventType,
+                                 const EmscriptenTouchEvent *theEvent,
+                                 void *theView) {
     return ((OcctView *)theView)->onTouchEvent(theEventType, theEvent);
   }
 
-  static EM_BOOL onKeyDownCallback(int theEventType, const EmscriptenKeyboardEvent *theEvent, void *theView)
-  {
+  static EM_BOOL onKeyDownCallback(int theEventType,
+                                   const EmscriptenKeyboardEvent *theEvent,
+                                   void *theView) {
     return ((OcctView *)theView)->onKeyDownEvent(theEventType, theEvent);
   }
 
-  static EM_BOOL onKeyUpCallback(int theEventType, const EmscriptenKeyboardEvent *theEvent, void *theView)
-  {
+  static EM_BOOL onKeyUpCallback(int theEventType,
+                                 const EmscriptenKeyboardEvent *theEvent,
+                                 void *theView) {
     return ((OcctView *)theView)->onKeyUpEvent(theEventType, theEvent);
   }
 
-private:
+ private:
   //! Register hot-keys for specified Action.
-  void addActionHotKeys(Aspect_VKey theAction,
-                        unsigned int theHotKey1 = 0,
+  void addActionHotKeys(Aspect_VKey theAction, unsigned int theHotKey1 = 0,
                         unsigned int theHotKey2 = 0,
                         unsigned int theHotKey3 = 0,
                         unsigned int theHotKey4 = 0,
-                        unsigned int theHotKey5 = 0)
-  {
-    if (theHotKey1 != 0)
-    {
+                        unsigned int theHotKey5 = 0) {
+    if (theHotKey1 != 0) {
       myNavKeyMap.Bind(theHotKey1, theAction);
     }
-    if (theHotKey2 != 0)
-    {
+    if (theHotKey2 != 0) {
       myNavKeyMap.Bind(theHotKey2, theAction);
     }
-    if (theHotKey3 != 0)
-    {
+    if (theHotKey3 != 0) {
       myNavKeyMap.Bind(theHotKey3, theAction);
     }
-    if (theHotKey4 != 0)
-    {
+    if (theHotKey4 != 0) {
       myNavKeyMap.Bind(theHotKey4, theAction);
     }
-    if (theHotKey5 != 0)
-    {
+    if (theHotKey5 != 0) {
       myNavKeyMap.Bind(theHotKey5, theAction);
     }
   }
@@ -253,17 +255,21 @@ private:
   //! Handle hot-key.
   bool processKeyPress(Aspect_VKey theKey);
 
-private:
-  NCollection_IndexedDataMap<TCollection_AsciiString, Handle(AIS_InteractiveObject)> myObjects; //!< map of named objects
+ private:
+  NCollection_IndexedDataMap<TCollection_AsciiString,
+                             Handle(AIS_InteractiveObject)>
+      myObjects;  //!< map of named objects
 
-  NCollection_DataMap<unsigned int, Aspect_VKey> myNavKeyMap; //!< map of Hot-Key (key+modifiers) to Action
+  NCollection_DataMap<unsigned int, Aspect_VKey>
+      myNavKeyMap;  //!< map of Hot-Key (key+modifiers) to Action
 
-  Handle(AIS_InteractiveContext) myContext; //!< interactive context
-  Handle(V3d_View) myView;                  //!< 3D view
-  Handle(Prs3d_TextAspect) myTextStyle;     //!< text style for OSD elements
-  Handle(AIS_ViewCube) myViewCube;          //!< view cube object
-  TCollection_AsciiString myCanvasId;       //!< canvas element id on HTML page
+  Handle(AIS_InteractiveContext) myContext;  //!< interactive context
+  Handle(V3d_View) myView;                   //!< 3D view
+  Handle(Prs3d_TextAspect) myTextStyle;      //!< text style for OSD elements
+  Handle(AIS_ViewCube) myViewCube;           //!< view cube object
+  TCollection_AsciiString myCanvasId;        //!< canvas element id on HTML page
   Graphic3d_Vec2i myWinSizeOld;
-  float myDevicePixelRatio;      //!< device pixel ratio for handling high DPI displays
-  unsigned int myUpdateRequests; //!< counter for unhandled update requests
+  float myDevicePixelRatio;       //!< device pixel ratio for handling high DPI
+                                  //!< displays
+  unsigned int myUpdateRequests;  //!< counter for unhandled update requests
 };

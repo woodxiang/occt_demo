@@ -71,7 +71,7 @@ bool StlFile::LoadBinaryFormatStream(istream &is) {
   m_strHeader = buf;
 
   is.seekg(0, ios_base::end);
-  int nLeft = is.tellg() - 80l - 4l;
+  int nLeft = is.tellg() - static_cast<typename std::basic_istream<char>::pos_type>(80+4);
   is.seekg(80, ios::beg);
 
   // Read and check facet count

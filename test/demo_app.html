@@ -25,8 +25,8 @@
     </div>
 
     <div>
-      <label for="fileInput">Choose BREP file to upload: </label
-      ><input type="file" id="fileInput" accept=".brep" />
+      <label for="fileInput">Choose BREP file to upload: </label>
+      <input type="file" id="fileInput" accept=".brep" />
       <input
         type="button"
         value="Clear All"
@@ -37,11 +37,17 @@
         value="Fit All"
         onclick="OccViewerModule.fitAllObjects(true)"
       />
+    </div>
+    <div>
+      <label for="stlInput">Choose STL file to upload:</label>
+      <input type="file" id="stlInput" accept=".stl" />
+    </div>
+    <div>
       <input
-      type="button"
-      value="Test"
-      onclick="OccViewerModule.testAction()"
-    />
+        type="button"
+        value="Test"
+        onclick="OccViewerModule.testAction()"
+      />
     </div>
     <h4>Console output:</h4>
     <p id="output"></p>
@@ -98,10 +104,34 @@
           return;
         }
         // Warning! Entire file is pre-loaded into memory.
-        var aFile = fileInput.files[0];
-        var aReader = new FileReader();
+        const aFile = fileInput.files[0];
+        const aReader = new FileReader();
         aReader.onload = function () {
-          var aDataArray = new Uint8Array(aReader.result);
+          const aDataArray = new Uint8Array(aReader.result);
+          const aDataBuffer = OccViewerModule._malloc(aDataArray.length);
+          OccViewerModule.HEAPU8.set(aDataArray, aDataBuffer);
+          OccViewerModule.openFromMemory(
+            aFile.name,
+            aDataBuffer,
+            aDataArray.length,
+            true
+          );
+          //OccViewerModule._free (aDataBuffer); will be freed by called method
+          OccViewerModule.displayGround(true);
+        };
+        aReader.readAsArrayBuffer(aFile);
+      };
+
+      stlInput.onchange = function () {
+        if (stlInput.files.length == 0) {
+          return;
+        }
+
+        // Warning! Entire file is pre-loaded into memory.
+        const aFile = stlInput.files[0];
+        const aReader = new FileReader();
+        aReader.onload = function () {
+          const aDataArray = new Uint8Array(aReader.result);
           const aDataBuffer = OccViewerModule._malloc(aDataArray.length);
           OccViewerModule.HEAPU8.set(aDataArray, aDataBuffer);
           OccViewerModule.openFromMemory(

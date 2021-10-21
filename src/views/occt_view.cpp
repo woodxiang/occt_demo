@@ -1,6 +1,7 @@
 // Copyright (c) 2019 OPEN CASCADE SAS
 //
-// This file is part of the examples of the Open CASCADE Technology software library.
+// This file is part of the examples of the Open CASCADE Technology software
+// library.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -9,103 +10,101 @@
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 //
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 //
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE
 
 #include "occt_view.h"
 
+#include <emscripten/bind.h>
+
 #include <AIS_Shape.hxx>
 #include <AIS_ViewCube.hxx>
-#include <Aspect_Handle.hxx>
 #include <Aspect_DisplayConnection.hxx>
+#include <Aspect_Handle.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
+#include <Graphic3d_CubeMapPacked.hxx>
 #include <Image_AlienPixMap.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
-#include <Graphic3d_CubeMapPacked.hxx>
 #include <OpenGl_GraphicDriver.hxx>
 #include <Prs3d_DatumAspect.hxx>
 #include <Prs3d_ToolCylinder.hxx>
 #include <Prs3d_ToolDisk.hxx>
-#include <Wasm_Window.hxx>
-
-#include <BRep_Builder.hxx>
-#include <BRepBndLib.hxx>
-#include <BRepTools.hxx>
 #include <Standard_ArrayStreamBuffer.hxx>
-
-#include <emscripten/bind.h>
-
+#include <Wasm_Window.hxx>
 #include <iostream>
 
 #include "../model_factory.h"
+#include "../membuf.h"
+#include "../stl_file.h"
 
 #define THE_CANVAS_ID "canvas"
 
-namespace
-{
-  //! Auxiliary wrapper for loading model.
-  struct ModelAsyncLoader
-  {
-    std::string Name;
-    std::string Path;
+namespace {
+//! Auxiliary wrapper for loading model.
+struct ModelAsyncLoader {
+  std::string Name;
+  std::string Path;
 
-    ModelAsyncLoader(const char *theName, const char *thePath)
-        : Name(theName), Path(thePath) {}
+  ModelAsyncLoader(const char *theName, const char *thePath)
+      : Name(theName), Path(thePath) {}
 
-    //! File data read event.
-    static void onDataRead(void *theOpaque, void *theBuffer, int theDataLen)
-    {
-      const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
-      OcctView::openFromMemory(aTask->Name, reinterpret_cast<uintptr_t>(theBuffer), theDataLen, false);
-      delete aTask;
+  //! File data read event.
+  static void onDataRead(void *theOpaque, void *theBuffer, int theDataLen) {
+    const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
+    OcctView::openFromMemory(
+        aTask->Name, reinterpret_cast<uintptr_t>(theBuffer), theDataLen, false);
+    delete aTask;
+  }
+
+  //! File read error event.
+  static void onReadFailed(void *theOpaque) {
+    const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
+    Message::DefaultMessenger()->Send(
+        TCollection_AsciiString("Error: unable to load file ") +
+            aTask->Path.c_str(),
+        Message_Fail);
+    delete aTask;
+  }
+};
+
+//! Auxiliary wrapper for loading cubemap.
+struct CubemapAsyncLoader {
+  //! Image file read event.
+  static void onImageRead(const char *theFilePath) {
+    Handle(Graphic3d_CubeMapPacked) aCubemap;
+    Handle(Image_AlienPixMap) anImage = new Image_AlienPixMap();
+    if (anImage->Load(theFilePath)) {
+      aCubemap = new Graphic3d_CubeMapPacked(anImage);
     }
+    OcctView::Instance().View()->SetBackgroundCubeMap(aCubemap, true, false);
+    OcctView::Instance().UpdateView();
+  }
 
-    //! File read error event.
-    static void onReadFailed(void *theOpaque)
-    {
-      const ModelAsyncLoader *aTask = (ModelAsyncLoader *)theOpaque;
-      Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: unable to load file ") + aTask->Path.c_str(), Message_Fail);
-      delete aTask;
-    }
-  };
-
-  //! Auxiliary wrapper for loading cubemap.
-  struct CubemapAsyncLoader
-  {
-    //! Image file read event.
-    static void onImageRead(const char *theFilePath)
-    {
-      Handle(Graphic3d_CubeMapPacked) aCubemap;
-      Handle(Image_AlienPixMap) anImage = new Image_AlienPixMap();
-      if (anImage->Load(theFilePath))
-      {
-        aCubemap = new Graphic3d_CubeMapPacked(anImage);
-      }
-      OcctView::Instance().View()->SetBackgroundCubeMap(aCubemap, true, false);
-      OcctView::Instance().UpdateView();
-    }
-
-    //! Image file failed read event.
-    static void onImageFailed(const char *theFilePath)
-    {
-      Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: unable to load image ") + theFilePath, Message_Fail);
-    }
-  };
-}
+  //! Image file failed read event.
+  static void onImageFailed(const char *theFilePath) {
+    Message::DefaultMessenger()->Send(
+        TCollection_AsciiString("Error: unable to load image ") + theFilePath,
+        Message_Fail);
+  }
+};
+}  // namespace
 
 // ================================================================
 // Function : Instance
 // Purpose  :
 // ================================================================
-OcctView &OcctView::Instance()
-{
+OcctView &OcctView::Instance() {
   static OcctView aViewer;
   return aViewer;
 }
@@ -114,63 +113,79 @@ OcctView &OcctView::Instance()
 // Function : WasmOcctView
 // Purpose  :
 // ================================================================
-OcctView::OcctView()
-    : myDevicePixelRatio(1.0f),
-      myUpdateRequests(0)
-{
-  addActionHotKeys(Aspect_VKey_NavForward, Aspect_VKey_W, Aspect_VKey_W | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavBackward, Aspect_VKey_S, Aspect_VKey_S | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavSlideLeft, Aspect_VKey_A, Aspect_VKey_A | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavSlideRight, Aspect_VKey_D, Aspect_VKey_D | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavRollCCW, Aspect_VKey_Q, Aspect_VKey_Q | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavRollCW, Aspect_VKey_E, Aspect_VKey_E | Aspect_VKeyFlags_SHIFT);
+OcctView::OcctView() : myDevicePixelRatio(1.0f), myUpdateRequests(0) {
+  addActionHotKeys(Aspect_VKey_NavForward, Aspect_VKey_W,
+                   Aspect_VKey_W | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavBackward, Aspect_VKey_S,
+                   Aspect_VKey_S | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSlideLeft, Aspect_VKey_A,
+                   Aspect_VKey_A | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSlideRight, Aspect_VKey_D,
+                   Aspect_VKey_D | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavRollCCW, Aspect_VKey_Q,
+                   Aspect_VKey_Q | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavRollCW, Aspect_VKey_E,
+                   Aspect_VKey_E | Aspect_VKeyFlags_SHIFT);
 
-  addActionHotKeys(Aspect_VKey_NavSpeedIncrease, Aspect_VKey_Plus, Aspect_VKey_Plus | Aspect_VKeyFlags_SHIFT,
-                   Aspect_VKey_Equal,
-                   Aspect_VKey_NumpadAdd, Aspect_VKey_NumpadAdd | Aspect_VKeyFlags_SHIFT);
-  addActionHotKeys(Aspect_VKey_NavSpeedDecrease, Aspect_VKey_Minus, Aspect_VKey_Minus | Aspect_VKeyFlags_SHIFT,
-                   Aspect_VKey_NumpadSubtract, Aspect_VKey_NumpadSubtract | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSpeedIncrease, Aspect_VKey_Plus,
+                   Aspect_VKey_Plus | Aspect_VKeyFlags_SHIFT, Aspect_VKey_Equal,
+                   Aspect_VKey_NumpadAdd,
+                   Aspect_VKey_NumpadAdd | Aspect_VKeyFlags_SHIFT);
+  addActionHotKeys(Aspect_VKey_NavSpeedDecrease, Aspect_VKey_Minus,
+                   Aspect_VKey_Minus | Aspect_VKeyFlags_SHIFT,
+                   Aspect_VKey_NumpadSubtract,
+                   Aspect_VKey_NumpadSubtract | Aspect_VKeyFlags_SHIFT);
 
-  // arrow keys conflict with browser page scrolling, so better be avoided in non-fullscreen mode
-  addActionHotKeys(Aspect_VKey_NavLookUp, Aspect_VKey_Numpad8);     // Aspect_VKey_Up
-  addActionHotKeys(Aspect_VKey_NavLookDown, Aspect_VKey_Numpad2);   // Aspect_VKey_Down
-  addActionHotKeys(Aspect_VKey_NavLookLeft, Aspect_VKey_Numpad4);   // Aspect_VKey_Left
-  addActionHotKeys(Aspect_VKey_NavLookRight, Aspect_VKey_Numpad6);  // Aspect_VKey_Right
-  addActionHotKeys(Aspect_VKey_NavSlideLeft, Aspect_VKey_Numpad1);  // Aspect_VKey_Left |Aspect_VKeyFlags_SHIFT
-  addActionHotKeys(Aspect_VKey_NavSlideRight, Aspect_VKey_Numpad3); // Aspect_VKey_Right|Aspect_VKeyFlags_SHIFT
-  addActionHotKeys(Aspect_VKey_NavSlideUp, Aspect_VKey_Numpad9);    // Aspect_VKey_Up   |Aspect_VKeyFlags_SHIFT
-  addActionHotKeys(Aspect_VKey_NavSlideDown, Aspect_VKey_Numpad7);  // Aspect_VKey_Down |Aspect_VKeyFlags_SHIFT
+  // arrow keys conflict with browser page scrolling, so better be avoided in
+  // non-fullscreen mode
+  addActionHotKeys(Aspect_VKey_NavLookUp,
+                   Aspect_VKey_Numpad8);  // Aspect_VKey_Up
+  addActionHotKeys(Aspect_VKey_NavLookDown,
+                   Aspect_VKey_Numpad2);  // Aspect_VKey_Down
+  addActionHotKeys(Aspect_VKey_NavLookLeft,
+                   Aspect_VKey_Numpad4);  // Aspect_VKey_Left
+  addActionHotKeys(Aspect_VKey_NavLookRight,
+                   Aspect_VKey_Numpad6);  // Aspect_VKey_Right
+  addActionHotKeys(
+      Aspect_VKey_NavSlideLeft,
+      Aspect_VKey_Numpad1);  // Aspect_VKey_Left |Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(
+      Aspect_VKey_NavSlideRight,
+      Aspect_VKey_Numpad3);  // Aspect_VKey_Right|Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(
+      Aspect_VKey_NavSlideUp,
+      Aspect_VKey_Numpad9);  // Aspect_VKey_Up   |Aspect_VKeyFlags_SHIFT
+  addActionHotKeys(
+      Aspect_VKey_NavSlideDown,
+      Aspect_VKey_Numpad7);  // Aspect_VKey_Down |Aspect_VKeyFlags_SHIFT
 }
 
 // ================================================================
 // Function : ~WasmOcctView
 // Purpose  :
 // ================================================================
-OcctView::~OcctView()
-{
-}
+OcctView::~OcctView() {}
 
 // ================================================================
 // Function : run
 // Purpose  :
 // ================================================================
-void OcctView::run()
-{
+void OcctView::run() {
   initWindow();
   initViewer();
   initDemoScene();
-  if (myView.IsNull())
-  {
+  if (myView.IsNull()) {
     return;
   }
 
   myView->MustBeResized();
   myView->Redraw();
 
-  // There is no infinite message loop, main() will return from here immediately.
-  // Tell that our Module should be left loaded and handle events through callbacks.
-  //emscripten_set_main_loop (redrawView, 60, 1);
-  //emscripten_set_main_loop (redrawView, -1, 1);
+  // There is no infinite message loop, main() will return from here
+  // immediately. Tell that our Module should be left loaded and handle events
+  // through callbacks.
+  // emscripten_set_main_loop (redrawView, 60, 1);
+  // emscripten_set_main_loop (redrawView, -1, 1);
   EM_ASM(Module['noExitRuntime'] = true);
 }
 
@@ -178,43 +193,58 @@ void OcctView::run()
 // Function : initWindow
 // Purpose  :
 // ================================================================
-void OcctView::initWindow()
-{
+void OcctView::initWindow() {
   myDevicePixelRatio = emscripten_get_device_pixel_ratio();
   myCanvasId = THE_CANVAS_ID;
-  const char *aTargetId = !myCanvasId.IsEmpty() ? myCanvasId.ToCString() : EMSCRIPTEN_EVENT_TARGET_WINDOW;
+  const char *aTargetId = !myCanvasId.IsEmpty()
+                              ? myCanvasId.ToCString()
+                              : EMSCRIPTEN_EVENT_TARGET_WINDOW;
   const EM_BOOL toUseCapture = EM_TRUE;
-  emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, toUseCapture, onResizeCallback);
+  emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this,
+                                 toUseCapture, onResizeCallback);
 
-  emscripten_set_mousedown_callback(aTargetId, this, toUseCapture, onMouseCallback);
-  emscripten_set_mouseup_callback(aTargetId, this, toUseCapture, onMouseCallback);
-  emscripten_set_mousemove_callback(aTargetId, this, toUseCapture, onMouseCallback);
-  emscripten_set_dblclick_callback(aTargetId, this, toUseCapture, onMouseCallback);
+  emscripten_set_mousedown_callback(aTargetId, this, toUseCapture,
+                                    onMouseCallback);
+  emscripten_set_mouseup_callback(aTargetId, this, toUseCapture,
+                                  onMouseCallback);
+  emscripten_set_mousemove_callback(aTargetId, this, toUseCapture,
+                                    onMouseCallback);
+  emscripten_set_dblclick_callback(aTargetId, this, toUseCapture,
+                                   onMouseCallback);
   emscripten_set_click_callback(aTargetId, this, toUseCapture, onMouseCallback);
-  emscripten_set_mouseenter_callback(aTargetId, this, toUseCapture, onMouseCallback);
-  emscripten_set_mouseleave_callback(aTargetId, this, toUseCapture, onMouseCallback);
+  emscripten_set_mouseenter_callback(aTargetId, this, toUseCapture,
+                                     onMouseCallback);
+  emscripten_set_mouseleave_callback(aTargetId, this, toUseCapture,
+                                     onMouseCallback);
   emscripten_set_wheel_callback(aTargetId, this, toUseCapture, onWheelCallback);
 
-  emscripten_set_touchstart_callback(aTargetId, this, toUseCapture, onTouchCallback);
-  emscripten_set_touchend_callback(aTargetId, this, toUseCapture, onTouchCallback);
-  emscripten_set_touchmove_callback(aTargetId, this, toUseCapture, onTouchCallback);
-  emscripten_set_touchcancel_callback(aTargetId, this, toUseCapture, onTouchCallback);
+  emscripten_set_touchstart_callback(aTargetId, this, toUseCapture,
+                                     onTouchCallback);
+  emscripten_set_touchend_callback(aTargetId, this, toUseCapture,
+                                   onTouchCallback);
+  emscripten_set_touchmove_callback(aTargetId, this, toUseCapture,
+                                    onTouchCallback);
+  emscripten_set_touchcancel_callback(aTargetId, this, toUseCapture,
+                                      onTouchCallback);
 
-  //emscripten_set_keypress_callback   (EMSCRIPTEN_EVENT_TARGET_WINDOW, this, toUseCapture, onKeyCallback);
-  emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, toUseCapture, onKeyDownCallback);
-  emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, toUseCapture, onKeyUpCallback);
+  // emscripten_set_keypress_callback   (EMSCRIPTEN_EVENT_TARGET_WINDOW, this,
+  // toUseCapture, onKeyCallback);
+  emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this,
+                                  toUseCapture, onKeyDownCallback);
+  emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this,
+                                toUseCapture, onKeyUpCallback);
 }
 
 // ================================================================
 // Function : dumpGlInfo
 // Purpose  :
 // ================================================================
-void OcctView::dumpGlInfo(bool theIsBasic)
-{
+void OcctView::dumpGlInfo(bool theIsBasic) {
   TColStd_IndexedDataMapOfStringString aGlCapsDict;
-  myView->DiagnosticInformation(aGlCapsDict, theIsBasic ? Graphic3d_DiagnosticInfo_Basic : Graphic3d_DiagnosticInfo_Complete);
-  if (theIsBasic)
-  {
+  myView->DiagnosticInformation(aGlCapsDict,
+                                theIsBasic ? Graphic3d_DiagnosticInfo_Basic
+                                           : Graphic3d_DiagnosticInfo_Complete);
+  if (theIsBasic) {
     TCollection_AsciiString aViewport;
     aGlCapsDict.FindFromKey("Viewport", aViewport);
     aGlCapsDict.Clear();
@@ -226,20 +256,17 @@ void OcctView::dumpGlInfo(bool theIsBasic)
   {
     TCollection_AsciiString *aGlVer = aGlCapsDict.ChangeSeek("GLversion");
     TCollection_AsciiString *aGlslVer = aGlCapsDict.ChangeSeek("GLSLversion");
-    if (aGlVer != NULL && aGlslVer != NULL)
-    {
+    if (aGlVer != NULL && aGlslVer != NULL) {
       *aGlVer = *aGlVer + " [GLSL: " + *aGlslVer + "]";
       aGlslVer->Clear();
     }
   }
 
   TCollection_AsciiString anInfo;
-  for (TColStd_IndexedDataMapOfStringString::Iterator aValueIter(aGlCapsDict); aValueIter.More(); aValueIter.Next())
-  {
-    if (!aValueIter.Value().IsEmpty())
-    {
-      if (!anInfo.IsEmpty())
-      {
+  for (TColStd_IndexedDataMapOfStringString::Iterator aValueIter(aGlCapsDict);
+       aValueIter.More(); aValueIter.Next()) {
+    if (!aValueIter.Value().IsEmpty()) {
+      if (!anInfo.IsEmpty()) {
         anInfo += "\n";
       }
       anInfo += aValueIter.Key() + ": " + aValueIter.Value();
@@ -253,25 +280,21 @@ void OcctView::dumpGlInfo(bool theIsBasic)
 // Function : initPixelScaleRatio
 // Purpose  :
 // ================================================================
-void OcctView::initPixelScaleRatio()
-{
+void OcctView::initPixelScaleRatio() {
   SetTouchToleranceScale(myDevicePixelRatio);
-  if (!myView.IsNull())
-  {
-    myView->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
+  if (!myView.IsNull()) {
+    myView->ChangeRenderingParams().Resolution =
+        (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
   }
-  if (!myContext.IsNull())
-  {
+  if (!myContext.IsNull()) {
     myContext->SetPixelTolerance(int(myDevicePixelRatio * 6.0));
-    if (!myViewCube.IsNull())
-    {
+    if (!myViewCube.IsNull()) {
       static const double THE_CUBE_SIZE = 60.0;
       myViewCube->SetSize(myDevicePixelRatio * THE_CUBE_SIZE, false);
       myViewCube->SetBoxFacetExtension(myViewCube->Size() * 0.15);
       myViewCube->SetAxesPadding(myViewCube->Size() * 0.10);
       myViewCube->SetFontHeight(THE_CUBE_SIZE * 0.16);
-      if (myViewCube->HasInteractiveContext())
-      {
+      if (myViewCube->HasInteractiveContext()) {
         myContext->Redisplay(myViewCube, false);
       }
     }
@@ -282,27 +305,30 @@ void OcctView::initPixelScaleRatio()
 // Function : initViewer
 // Purpose  :
 // ================================================================
-bool OcctView::initViewer()
-{
+bool OcctView::initViewer() {
   // Build with "--preload-file MyFontFile.ttf" option
   // and register font in Font Manager to use custom font(s).
   /*const char* aFontPath = "MyFontFile.ttf";
-  if (Handle(Font_SystemFont) aFont = Font_FontMgr::GetInstance()->CheckFont (aFontPath))
+  if (Handle(Font_SystemFont) aFont = Font_FontMgr::GetInstance()->CheckFont
+  (aFontPath))
   {
     Font_FontMgr::GetInstance()->RegisterFont (aFont, true);
   }
   else
   {
-    Message::DefaultMessenger()->Send (TCollection_AsciiString ("Error: font '") + aFontPath + "' is not found", Message_Fail);
+    Message::DefaultMessenger()->Send (TCollection_AsciiString ("Error: font '")
+  + aFontPath + "' is not found", Message_Fail);
   }*/
 
   Handle(Aspect_DisplayConnection) aDisp;
   Handle(OpenGl_GraphicDriver) aDriver = new OpenGl_GraphicDriver(aDisp, false);
-  aDriver->ChangeOptions().buffersNoSwap = true;      // swap has no effect in WebGL
-  aDriver->ChangeOptions().buffersOpaqueAlpha = true; // avoid unexpected blending of canvas with page background
-  if (!aDriver->InitContext())
-  {
-    Message::DefaultMessenger()->Send(TCollection_AsciiString("Error: EGL initialization failed"), Message_Fail);
+  aDriver->ChangeOptions().buffersNoSwap = true;  // swap has no effect in WebGL
+  aDriver->ChangeOptions().buffersOpaqueAlpha =
+      true;  // avoid unexpected blending of canvas with page background
+  if (!aDriver->InitContext()) {
+    Message::DefaultMessenger()->Send(
+        TCollection_AsciiString("Error: EGL initialization failed"),
+        Message_Fail);
     return false;
   }
 
@@ -311,11 +337,10 @@ bool OcctView::initViewer()
   aViewer->SetDefaultShadingModel(Graphic3d_TOSM_FRAGMENT);
   aViewer->SetDefaultLights();
   aViewer->SetLightOn();
-  for (V3d_ListOfLight::Iterator aLightIter(aViewer->ActiveLights()); aLightIter.More(); aLightIter.Next())
-  {
+  for (V3d_ListOfLight::Iterator aLightIter(aViewer->ActiveLights());
+       aLightIter.More(); aLightIter.Next()) {
     const Handle(V3d_Light) &aLight = aLightIter.Value();
-    if (aLight->Type() == Graphic3d_TypeOfLightSource_Directional)
-    {
+    if (aLight->Type() == Graphic3d_TypeOfLightSource_Directional) {
       aLight->SetCastShadows(true);
     }
   }
@@ -338,7 +363,8 @@ bool OcctView::initViewer()
   myView->Camera()->SetProjectionType(Graphic3d_Camera::Projection_Perspective);
   myView->SetImmediateUpdate(false);
   myView->ChangeRenderingParams().IsShadowEnabled = false;
-  myView->ChangeRenderingParams().Resolution = (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
+  myView->ChangeRenderingParams().Resolution =
+      (unsigned int)(96.0 * myDevicePixelRatio + 0.5);
   myView->ChangeRenderingParams().ToShowStats = true;
   myView->ChangeRenderingParams().StatsTextAspect = myTextStyle->Aspect();
   myView->ChangeRenderingParams().StatsTextHeight = (int)myTextStyle->Height();
@@ -354,19 +380,20 @@ bool OcctView::initViewer()
 // Function : initDemoScene
 // Purpose  :
 // ================================================================
-void OcctView::initDemoScene()
-{
-  if (myContext.IsNull())
-  {
+void OcctView::initDemoScene() {
+  if (myContext.IsNull()) {
     return;
   }
 
-  //myView->TriedronDisplay (Aspect_TOTP_LEFT_LOWER, Quantity_NOC_GOLD, 0.08, V3d_WIREFRAME);
+  // myView->TriedronDisplay (Aspect_TOTP_LEFT_LOWER, Quantity_NOC_GOLD, 0.08,
+  // V3d_WIREFRAME);
 
   myViewCube = new AIS_ViewCube();
   // presentation parameters
   initPixelScaleRatio();
-  myViewCube->SetTransformPersistence(new Graphic3d_TransformPers(Graphic3d_TMF_TriedronPers, Aspect_TOTP_RIGHT_LOWER, Graphic3d_Vec2i(100, 100)));
+  myViewCube->SetTransformPersistence(new Graphic3d_TransformPers(
+      Graphic3d_TMF_TriedronPers, Aspect_TOTP_RIGHT_LOWER,
+      Graphic3d_Vec2i(100, 100)));
   myViewCube->Attributes()->SetDatumAspect(new Prs3d_DatumAspect());
   myViewCube->Attributes()->DatumAspect()->SetTextAspect(myTextStyle);
   // animation parameters
@@ -375,22 +402,21 @@ void OcctView::initDemoScene()
   myViewCube->SetAutoStartAnimation(true);
   myContext->Display(myViewCube, false);
 
-  // Build with "--preload-file MySampleFile.brep" option to load some shapes here.
+  // Build with "--preload-file MySampleFile.brep" option to load some shapes
+  // here.
 }
 
 // ================================================================
 // Function : ProcessInput
 // Purpose  :
 // ================================================================
-void OcctView::ProcessInput()
-{
-  if (!myView.IsNull())
-  {
-    // Queue onRedrawView()/redrawView callback to redraw canvas after all user input is flushed by browser.
-    // Redrawing viewer on every single message would be a pointless waste of resources,
-    // as user will see only the last drawn frame due to WebGL implementation details.
-    if (++myUpdateRequests == 1)
-    {
+void OcctView::ProcessInput() {
+  if (!myView.IsNull()) {
+    // Queue onRedrawView()/redrawView callback to redraw canvas after all user
+    // input is flushed by browser. Redrawing viewer on every single message
+    // would be a pointless waste of resources, as user will see only the last
+    // drawn frame due to WebGL implementation details.
+    if (++myUpdateRequests == 1) {
       emscripten_async_call(onRedrawView, this, 0);
     }
   }
@@ -400,10 +426,8 @@ void OcctView::ProcessInput()
 // Function : UpdateView
 // Purpose  :
 // ================================================================
-void OcctView::UpdateView()
-{
-  if (!myView.IsNull())
-  {
+void OcctView::UpdateView() {
+  if (!myView.IsNull()) {
     myView->Invalidate();
     // queue next onRedrawView()/redrawView()
     ProcessInput();
@@ -414,10 +438,8 @@ void OcctView::UpdateView()
 // Function : redrawView
 // Purpose  :
 // ================================================================
-void OcctView::redrawView()
-{
-  if (!myView.IsNull())
-  {
+void OcctView::redrawView() {
+  if (!myView.IsNull()) {
     FlushViewEvents(myContext, myView, true);
   }
 }
@@ -427,12 +449,10 @@ void OcctView::redrawView()
 // Purpose  :
 // ================================================================
 void OcctView::handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
-                                const Handle(V3d_View) & theView)
-{
+                                const Handle(V3d_View) & theView) {
   myUpdateRequests = 0;
   AIS_ViewController::handleViewRedraw(theCtx, theView);
-  if (myToAskNextFrame)
-  {
+  if (myToAskNextFrame) {
     // ask more frames
     ++myUpdateRequests;
     emscripten_async_call(onRedrawView, this, 0);
@@ -443,12 +463,12 @@ void OcctView::handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
 // Function : onResizeEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onResizeEvent(int theEventType, const EmscriptenUiEvent *theEvent)
-{
-  (void)theEventType; // EMSCRIPTEN_EVENT_RESIZE or EMSCRIPTEN_EVENT_CANVASRESIZED
+EM_BOOL OcctView::onResizeEvent(int theEventType,
+                                const EmscriptenUiEvent *theEvent) {
+  (void)theEventType;  // EMSCRIPTEN_EVENT_RESIZE or
+                       // EMSCRIPTEN_EVENT_CANVASRESIZED
   (void)theEvent;
-  if (myView.IsNull())
-  {
+  if (myView.IsNull()) {
     return EM_FALSE;
   }
 
@@ -457,11 +477,9 @@ EM_BOOL OcctView::onResizeEvent(int theEventType, const EmscriptenUiEvent *theEv
   aWindow->DoResize();
   aWindow->Size(aWinSizeNew.x(), aWinSizeNew.y());
   const float aPixelRatio = emscripten_get_device_pixel_ratio();
-  if (aWinSizeNew != myWinSizeOld || aPixelRatio != myDevicePixelRatio)
-  {
+  if (aWinSizeNew != myWinSizeOld || aPixelRatio != myDevicePixelRatio) {
     myWinSizeOld = aWinSizeNew;
-    if (myDevicePixelRatio != aPixelRatio)
-    {
+    if (myDevicePixelRatio != aPixelRatio) {
       myDevicePixelRatio = aPixelRatio;
       initPixelScaleRatio();
     }
@@ -478,45 +496,45 @@ EM_BOOL OcctView::onResizeEvent(int theEventType, const EmscriptenUiEvent *theEv
 // Function : onMouseEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onMouseEvent(int theEventType, const EmscriptenMouseEvent *theEvent)
-{
-  if (myView.IsNull())
-  {
+EM_BOOL OcctView::onMouseEvent(int theEventType,
+                               const EmscriptenMouseEvent *theEvent) {
+  if (myView.IsNull()) {
     return EM_FALSE;
   }
 
   Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
-  return aWindow->ProcessMouseEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+  return aWindow->ProcessMouseEvent(*this, theEventType, theEvent) ? EM_TRUE
+                                                                   : EM_FALSE;
 }
 
 // ================================================================
 // Function : onWheelEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onWheelEvent(int theEventType, const EmscriptenWheelEvent *theEvent)
-{
-  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_WHEEL)
-  {
+EM_BOOL OcctView::onWheelEvent(int theEventType,
+                               const EmscriptenWheelEvent *theEvent) {
+  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_WHEEL) {
     return EM_FALSE;
   }
 
   Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
-  return aWindow->ProcessWheelEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+  return aWindow->ProcessWheelEvent(*this, theEventType, theEvent) ? EM_TRUE
+                                                                   : EM_FALSE;
 }
 
 // ================================================================
 // Function : onTouchEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onTouchEvent(int theEventType, const EmscriptenTouchEvent *theEvent)
-{
-  if (myView.IsNull())
-  {
+EM_BOOL OcctView::onTouchEvent(int theEventType,
+                               const EmscriptenTouchEvent *theEvent) {
+  if (myView.IsNull()) {
     return EM_FALSE;
   }
 
   Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
-  return aWindow->ProcessTouchEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+  return aWindow->ProcessTouchEvent(*this, theEventType, theEvent) ? EM_TRUE
+                                                                   : EM_FALSE;
 }
 
 // ================================================================
@@ -525,30 +543,26 @@ EM_BOOL OcctView::onTouchEvent(int theEventType, const EmscriptenTouchEvent *the
 // ================================================================
 bool OcctView::navigationKeyModifierSwitch(unsigned int theModifOld,
                                            unsigned int theModifNew,
-                                           double theTimeStamp)
-{
+                                           double theTimeStamp) {
   bool hasActions = false;
-  for (unsigned int aKeyIter = 0; aKeyIter < Aspect_VKey_ModifiersLower; ++aKeyIter)
-  {
-    if (!myKeys.IsKeyDown(aKeyIter))
-    {
+  for (unsigned int aKeyIter = 0; aKeyIter < Aspect_VKey_ModifiersLower;
+       ++aKeyIter) {
+    if (!myKeys.IsKeyDown(aKeyIter)) {
       continue;
     }
 
-    Aspect_VKey anActionOld = Aspect_VKey_UNKNOWN, anActionNew = Aspect_VKey_UNKNOWN;
+    Aspect_VKey anActionOld = Aspect_VKey_UNKNOWN,
+                anActionNew = Aspect_VKey_UNKNOWN;
     myNavKeyMap.Find(aKeyIter | theModifOld, anActionOld);
     myNavKeyMap.Find(aKeyIter | theModifNew, anActionNew);
-    if (anActionOld == anActionNew)
-    {
+    if (anActionOld == anActionNew) {
       continue;
     }
 
-    if (anActionOld != Aspect_VKey_UNKNOWN)
-    {
+    if (anActionOld != Aspect_VKey_UNKNOWN) {
       myKeys.KeyUp(anActionOld, theTimeStamp);
     }
-    if (anActionNew != Aspect_VKey_UNKNOWN)
-    {
+    if (anActionNew != Aspect_VKey_UNKNOWN) {
       hasActions = true;
       myKeys.KeyDown(anActionNew, theTimeStamp);
     }
@@ -560,37 +574,36 @@ bool OcctView::navigationKeyModifierSwitch(unsigned int theModifOld,
 // Function : onKeyDownEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onKeyDownEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent)
-{
-  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYDOWN) // EMSCRIPTEN_EVENT_KEYPRESS
+EM_BOOL OcctView::onKeyDownEvent(int theEventType,
+                                 const EmscriptenKeyboardEvent *theEvent) {
+  if (myView.IsNull() ||
+      theEventType != EMSCRIPTEN_EVENT_KEYDOWN)  // EMSCRIPTEN_EVENT_KEYPRESS
   {
     return EM_FALSE;
   }
 
   Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
-  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE
+                                                                 : EM_FALSE;
 }
 
 //=======================================================================
-//function : KeyDown
-//purpose  :
+// function : KeyDown
+// purpose  :
 //=======================================================================
-void OcctView::KeyDown(Aspect_VKey theKey,
-                       double theTime,
-                       double thePressure)
-{
+void OcctView::KeyDown(Aspect_VKey theKey, double theTime, double thePressure) {
   const unsigned int aModifOld = myKeys.Modifiers();
   AIS_ViewController::KeyDown(theKey, theTime, thePressure);
 
   const unsigned int aModifNew = myKeys.Modifiers();
-  if (aModifNew != aModifOld && navigationKeyModifierSwitch(aModifOld, aModifNew, theTime))
-  {
+  if (aModifNew != aModifOld &&
+      navigationKeyModifierSwitch(aModifOld, aModifNew, theTime)) {
     // modifier key just pressed
   }
 
   Aspect_VKey anAction = Aspect_VKey_UNKNOWN;
-  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) && anAction != Aspect_VKey_UNKNOWN)
-  {
+  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) &&
+      anAction != Aspect_VKey_UNKNOWN) {
     AIS_ViewController::KeyDown(anAction, theTime, thePressure);
   }
 }
@@ -599,37 +612,35 @@ void OcctView::KeyDown(Aspect_VKey theKey,
 // Function : onKeyUpEvent
 // Purpose  :
 // ================================================================
-EM_BOOL OcctView::onKeyUpEvent(int theEventType, const EmscriptenKeyboardEvent *theEvent)
-{
-  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYUP)
-  {
+EM_BOOL OcctView::onKeyUpEvent(int theEventType,
+                               const EmscriptenKeyboardEvent *theEvent) {
+  if (myView.IsNull() || theEventType != EMSCRIPTEN_EVENT_KEYUP) {
     return EM_FALSE;
   }
 
   Handle(Wasm_Window) aWindow = Handle(Wasm_Window)::DownCast(myView->Window());
-  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE : EM_FALSE;
+  return aWindow->ProcessKeyEvent(*this, theEventType, theEvent) ? EM_TRUE
+                                                                 : EM_FALSE;
 }
 
 //=======================================================================
-//function : KeyUp
-//purpose  :
+// function : KeyUp
+// purpose  :
 //=======================================================================
-void OcctView::KeyUp(Aspect_VKey theKey,
-                     double theTime)
-{
+void OcctView::KeyUp(Aspect_VKey theKey, double theTime) {
   const unsigned int aModifOld = myKeys.Modifiers();
   AIS_ViewController::KeyUp(theKey, theTime);
 
   Aspect_VKey anAction = Aspect_VKey_UNKNOWN;
-  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) && anAction != Aspect_VKey_UNKNOWN)
-  {
+  if (myNavKeyMap.Find(theKey | myKeys.Modifiers(), anAction) &&
+      anAction != Aspect_VKey_UNKNOWN) {
     AIS_ViewController::KeyUp(anAction, theTime);
     processKeyPress(anAction);
   }
 
   const unsigned int aModifNew = myKeys.Modifiers();
-  if (aModifNew != aModifOld && navigationKeyModifierSwitch(aModifOld, aModifNew, theTime))
-  {
+  if (aModifNew != aModifOld &&
+      navigationKeyModifierSwitch(aModifOld, aModifNew, theTime)) {
     // modifier key released
   }
 
@@ -637,19 +648,16 @@ void OcctView::KeyUp(Aspect_VKey theKey,
 }
 
 //==============================================================================
-//function : processKeyPress
-//purpose  :
+// function : processKeyPress
+// purpose  :
 //==============================================================================
-bool OcctView::processKeyPress(Aspect_VKey theKey)
-{
-  switch (theKey)
-  {
-  case Aspect_VKey_F:
-  {
-    myView->FitAll(0.01, false);
-    UpdateView();
-    return true;
-  }
+bool OcctView::processKeyPress(Aspect_VKey theKey) {
+  switch (theKey) {
+    case Aspect_VKey_F: {
+      myView->FitAll(0.01, false);
+      UpdateView();
+      return true;
+    }
   }
   return false;
 }
@@ -658,15 +666,14 @@ bool OcctView::processKeyPress(Aspect_VKey theKey)
 // Function : setCubemapBackground
 // Purpose  :
 // ================================================================
-void OcctView::setCubemapBackground(const std::string &theImagePath)
-{
-  if (!theImagePath.empty())
-  {
-    emscripten_async_wget(theImagePath.c_str(), "/emulated/cubemap.jpg", CubemapAsyncLoader::onImageRead, CubemapAsyncLoader::onImageFailed);
-  }
-  else
-  {
-    OcctView::Instance().View()->SetBackgroundCubeMap(Handle(Graphic3d_CubeMapPacked)(), true, false);
+void OcctView::setCubemapBackground(const std::string &theImagePath) {
+  if (!theImagePath.empty()) {
+    emscripten_async_wget(theImagePath.c_str(), "/emulated/cubemap.jpg",
+                          CubemapAsyncLoader::onImageRead,
+                          CubemapAsyncLoader::onImageFailed);
+  } else {
+    OcctView::Instance().View()->SetBackgroundCubeMap(
+        Handle(Graphic3d_CubeMapPacked)(), true, false);
     OcctView::Instance().UpdateView();
   }
 }
@@ -675,15 +682,11 @@ void OcctView::setCubemapBackground(const std::string &theImagePath)
 // Function : fitAllObjects
 // Purpose  :
 // ================================================================
-void OcctView::fitAllObjects(bool theAuto)
-{
+void OcctView::fitAllObjects(bool theAuto) {
   OcctView &aViewer = Instance();
-  if (theAuto)
-  {
+  if (theAuto) {
     aViewer.FitAllAuto(aViewer.Context(), aViewer.View());
-  }
-  else
-  {
+  } else {
     aViewer.View()->FitAll(0.01, false);
   }
   aViewer.UpdateView();
@@ -693,12 +696,12 @@ void OcctView::fitAllObjects(bool theAuto)
 // Function : removeAllObjects
 // Purpose  :
 // ================================================================
-void OcctView::removeAllObjects()
-{
+void OcctView::removeAllObjects() {
   OcctView &aViewer = Instance();
-  for (NCollection_IndexedDataMap<TCollection_AsciiString, Handle(AIS_InteractiveObject)>::Iterator anObjIter(aViewer.myObjects);
-       anObjIter.More(); anObjIter.Next())
-  {
+  for (NCollection_IndexedDataMap<TCollection_AsciiString,
+                                  Handle(AIS_InteractiveObject)>::Iterator
+           anObjIter(aViewer.myObjects);
+       anObjIter.More(); anObjIter.Next()) {
     aViewer.Context()->Remove(anObjIter.Value(), false);
   }
   aViewer.myObjects.Clear();
@@ -709,12 +712,11 @@ void OcctView::removeAllObjects()
 // Function : removeObject
 // Purpose  :
 // ================================================================
-bool OcctView::removeObject(const std::string &theName)
-{
+bool OcctView::removeObject(const std::string &theName) {
   OcctView &aViewer = Instance();
   Handle(AIS_InteractiveObject) anObj;
-  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
-  {
+  if (!theName.empty() &&
+      !aViewer.myObjects.FindFromKey(theName.c_str(), anObj)) {
     return false;
   }
 
@@ -728,12 +730,11 @@ bool OcctView::removeObject(const std::string &theName)
 // Function : eraseObject
 // Purpose  :
 // ================================================================
-bool OcctView::eraseObject(const std::string &theName)
-{
+bool OcctView::eraseObject(const std::string &theName) {
   OcctView &aViewer = Instance();
   Handle(AIS_InteractiveObject) anObj;
-  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
-  {
+  if (!theName.empty() &&
+      !aViewer.myObjects.FindFromKey(theName.c_str(), anObj)) {
     return false;
   }
 
@@ -746,12 +747,11 @@ bool OcctView::eraseObject(const std::string &theName)
 // Function : displayObject
 // Purpose  :
 // ================================================================
-bool OcctView::displayObject(const std::string &theName)
-{
+bool OcctView::displayObject(const std::string &theName) {
   OcctView &aViewer = Instance();
   Handle(AIS_InteractiveObject) anObj;
-  if (!theName.empty() && !aViewer.myObjects.FindFromKey(theName.c_str(), anObj))
-  {
+  if (!theName.empty() &&
+      !aViewer.myObjects.FindFromKey(theName.c_str(), anObj)) {
     return false;
   }
 
@@ -765,57 +765,52 @@ bool OcctView::displayObject(const std::string &theName)
 // Purpose  :
 // ================================================================
 void OcctView::openFromUrl(const std::string &theName,
-                           const std::string &theModelPath)
-{
-  ModelAsyncLoader *aTask = new ModelAsyncLoader(theName.c_str(), theModelPath.c_str());
-  emscripten_async_wget_data(theModelPath.c_str(), (void *)aTask, ModelAsyncLoader::onDataRead, ModelAsyncLoader::onReadFailed);
+                           const std::string &theModelPath) {
+  ModelAsyncLoader *aTask =
+      new ModelAsyncLoader(theName.c_str(), theModelPath.c_str());
+  emscripten_async_wget_data(theModelPath.c_str(), (void *)aTask,
+                             ModelAsyncLoader::onDataRead,
+                             ModelAsyncLoader::onReadFailed);
 }
 
 // ================================================================
 // Function : openFromMemory
 // Purpose  :
 // ================================================================
-bool OcctView::openFromMemory(const std::string &theName,
-                              uintptr_t theBuffer, int theDataLen,
-                              bool theToFree)
-{
+bool OcctView::openFromMemory(const std::string &theName, uintptr_t theBuffer,
+                              int theDataLen, bool theToFree) {
   removeObject(theName);
   char *aBytes = reinterpret_cast<char *>(theBuffer);
-  if (aBytes == nullptr || theDataLen <= 0)
-  {
+  if (aBytes == nullptr || theDataLen <= 0) {
     return false;
   }
 
 // Function to check if specified data stream starts with specified header.
-#define dataStartsWithHeader(theData, theHeader) (::strncmp(theData, theHeader, sizeof(theHeader) - 1) == 0)
+#define dataStartsWithHeader(theData, theHeader) \
+  (::strncmp(theData, theHeader, sizeof(theHeader) - 1) == 0)
 
-  if (dataStartsWithHeader(aBytes, "DBRep_DrawableShape"))
-  {
+  if (dataStartsWithHeader(aBytes, "DBRep_DrawableShape")) {
     return openBRepFromMemory(theName, theBuffer, theDataLen, theToFree);
+  } else if (dataStartsWithHeader(aBytes, "solid")) {
+    return openStlFromMemory(theName, theBuffer, theDataLen, theToFree);
   }
-  else if (dataStartsWithHeader(aBytes, "glTF"))
-  {
-    //return openGltfFromMemory (theName, theBuffer, theDataLen, theToFree);
-  }
-  if (theToFree)
-  {
+  if (theToFree) {
     free(aBytes);
   }
 
-  Message::SendFail() << "Error: file '" << theName.c_str() << "' has unsupported format";
+  Message::SendFail() << "Error: file '" << theName.c_str()
+                      << "' has unsupported format";
   return false;
 }
 
-void OcctView::testAction()
-{
+void OcctView::testAction() {
   removeAllObjects();
 
   std::string theName = "TestObject";
   OcctView &aViewer = Instance();
   auto aShape = ModelFactory::GetInstance()->MakeBottle(10, 20, 5);
   Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
-  if (!theName.empty())
-  {
+  if (!theName.empty()) {
     aViewer.myObjects.Add(theName.c_str(), aShapePrs);
   }
   aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
@@ -823,7 +818,8 @@ void OcctView::testAction()
   aViewer.View()->FitAll(0.01, false);
   aViewer.UpdateView();
 
-  Message::DefaultMessenger()->Send(TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(
+      TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
   Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
 }
 
@@ -833,8 +829,7 @@ void OcctView::testAction()
 // ================================================================
 bool OcctView::openBRepFromMemory(const std::string &theName,
                                   uintptr_t theBuffer, int theDataLen,
-                                  bool theToFree)
-{
+                                  bool theToFree) {
   removeObject(theName);
 
   OcctView &aViewer = Instance();
@@ -846,20 +841,17 @@ bool OcctView::openBRepFromMemory(const std::string &theName,
     Standard_ArrayStreamBuffer aStreamBuffer(aRawData, theDataLen);
     std::istream aStream(&aStreamBuffer);
     BRepTools::Read(aShape, aStream, aBuilder);
-    if (theToFree)
-    {
+    if (theToFree) {
       free(aRawData);
     }
     isLoaded = true;
   }
-  if (!isLoaded)
-  {
+  if (!isLoaded) {
     return false;
   }
 
   Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
-  if (!theName.empty())
-  {
+  if (!theName.empty()) {
     aViewer.myObjects.Add(theName.c_str(), aShapePrs);
   }
   aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
@@ -867,8 +859,27 @@ bool OcctView::openBRepFromMemory(const std::string &theName,
   aViewer.View()->FitAll(0.01, false);
   aViewer.UpdateView();
 
-  Message::DefaultMessenger()->Send(TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(
+      TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
   Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
+  return true;
+}
+
+bool OcctView::openStlFromMemory(const std::string &theName,
+                                 uintptr_t theBuffer, int theDataLen,
+                                 bool theToFree) {
+  removeObject(theName);
+
+  basic_membuf mb(reinterpret_cast<char *>(theBuffer), theDataLen);
+
+  std::istream is(&mb);
+
+  StlFile stlFile;
+  
+  stlFile.LoadFromStream(is);
+
+  assert(stlFile.get_TriangleCount() > 0);
+
   return true;
 }
 
@@ -876,21 +887,17 @@ bool OcctView::openBRepFromMemory(const std::string &theName,
 // Function : displayGround
 // Purpose  :
 // ================================================================
-void OcctView::displayGround(bool theToShow)
-{
+void OcctView::displayGround(bool theToShow) {
   static Handle(AIS_Shape) aGroundPrs = new AIS_Shape(TopoDS_Shape());
 
   OcctView &aViewer = Instance();
   Bnd_Box aBox;
-  if (theToShow)
-  {
+  if (theToShow) {
     aViewer.Context()->Remove(aGroundPrs, false);
     aBox = aViewer.View()->View()->MinMaxValues();
   }
-  if (aBox.IsVoid() || aBox.IsZThin(Precision::Confusion()))
-  {
-    if (!aGroundPrs.IsNull() && aGroundPrs->HasInteractiveContext())
-    {
+  if (aBox.IsVoid() || aBox.IsZThin(Precision::Confusion())) {
+    if (!aGroundPrs.IsNull() && aGroundPrs->HasInteractiveContext()) {
       aViewer.Context()->Remove(aGroundPrs, false);
       aViewer.UpdateView();
     }
@@ -913,8 +920,10 @@ void OcctView::displayGround(bool theToShow)
   Prs3d_ToolDisk aDiskTool(0.0, aRadius, 50, 1);
   TopoDS_Face aCylFace, aDiskFace1, aDiskFace2;
   BRep_Builder().MakeFace(aCylFace, aCylTool.CreatePolyTriangulation(aTrsf1));
-  BRep_Builder().MakeFace(aDiskFace1, aDiskTool.CreatePolyTriangulation(aTrsf1));
-  BRep_Builder().MakeFace(aDiskFace2, aDiskTool.CreatePolyTriangulation(aTrsf2));
+  BRep_Builder().MakeFace(aDiskFace1,
+                          aDiskTool.CreatePolyTriangulation(aTrsf1));
+  BRep_Builder().MakeFace(aDiskFace2,
+                          aDiskTool.CreatePolyTriangulation(aTrsf2));
 
   BRep_Builder().MakeCompound(aGround);
   BRep_Builder().Add(aGround, aCylFace);
@@ -931,8 +940,7 @@ void OcctView::displayGround(bool theToShow)
 }
 
 // Module exports
-EMSCRIPTEN_BINDINGS(OccViewerModule)
-{
+EMSCRIPTEN_BINDINGS(OccViewerModule) {
   emscripten::function("setCubemapBackground", &OcctView::setCubemapBackground);
   emscripten::function("fitAllObjects", &OcctView::fitAllObjects);
   emscripten::function("removeAllObjects", &OcctView::removeAllObjects);
@@ -941,7 +949,9 @@ EMSCRIPTEN_BINDINGS(OccViewerModule)
   emscripten::function("displayObject", &OcctView::displayObject);
   emscripten::function("displayGround", &OcctView::displayGround);
   emscripten::function("openFromUrl", &OcctView::openFromUrl);
-  emscripten::function("openFromMemory", &OcctView::openFromMemory, emscripten::allow_raw_pointers());
-  emscripten::function("openBRepFromMemory", &OcctView::openBRepFromMemory, emscripten::allow_raw_pointers());
+  emscripten::function("openFromMemory", &OcctView::openFromMemory,
+                       emscripten::allow_raw_pointers());
+  emscripten::function("openBRepFromMemory", &OcctView::openBRepFromMemory,
+                       emscripten::allow_raw_pointers());
   emscripten::function("testAction", &OcctView::testAction);
 }

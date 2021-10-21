@@ -24,7 +24,7 @@ EXPORT_METHODS = -s EXPORTED_FUNCTIONS='[$(METHOD_NAMES)]' -s EXPORTED_RUNTIME_M
 
 EXTERN_POST_JS = --extern-post-js src/occt-webgl-viewer.js
 
-CPPFLAGS += -g -fdebug-compilation-dir="../"
+CPPFLAGS += -g -std=c++17 -fdebug-compilation-dir="../"
 CPPFLAGS += -I$(OpenCASCADE_INCLUDE_DIR)
 
 %.o: %.cpp
@@ -39,8 +39,11 @@ main.o: src/main.cpp
 model_factory.o: src/model_factory.cpp
 	$(CXX) $(CPPFLAGS) -c -o $@ $<
 
-js/demo_app.js: main.o model_factory.o $(lib1_OBJS)
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o model_factory.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1 $(EXPORT_METHODS) $(EXTERN_POST_JS) -s LLD_REPORT_UNDEFINED --bind
+stl_file.o: src/stl_file.cpp
+	$(CXX) $(CPPFLAGS) -c -o $@ $<
+
+js/demo_app.js: main.o model_factory.o stl_file.o $(lib1_OBJS)
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o model_factory.o stl_file.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1 $(EXPORT_METHODS) $(EXTERN_POST_JS) -s LLD_REPORT_UNDEFINED --bind
 
 clean:
 	$(RM) -r *.o js/*.wasm js/*.js src/views/*.o
