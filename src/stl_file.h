@@ -1,9 +1,19 @@
+//=============================================================================
+//
+// SHICHUANG CONFIDENTIAL
+// __________________
+//
+//  [2016] - [2021] SHICHUANG Co., Ltd.
+//  All Rights Reserved.
+//
+//=============================================================================
+
 #pragma once
 
 #include <cassert>
+#include <iostream>
 #include <string>
 #include <vector>
-#include <iostream>
 
 template <typename T>
 struct Point3D {
@@ -20,21 +30,21 @@ struct Point3D {
  public:
   T operator[](size_t index) { return Coords[index]; }
 
-  inline T dot(Point3D<T> &pt) {
+  inline T dot(Point3D<T>& pt) {
     return Coords[0] * pt[0] + Coords[1] * pt[1] + Coords[2] * pt[2];
   }
 
-  inline Point3D<T> Cross(Point3D<T> &pt) {
+  inline Point3D<T> Cross(Point3D<T>& pt) {
     return Point3D(Coords[1] * pt[2] - pt[1] * Coords[2],
                    Coords[2] * pt[0] - pt[2] * Coords[0],
                    Coords[0] * pt[1] - pt[0] * Coords[1]);
   }
 
-  inline Point3D<T> operator-(Point3D<T> &p) {
+  inline Point3D<T> operator-(Point3D<T>& p) {
     return Point3D<T>(Coords[0] - p[0], Coords[1] - p[1], Coords[2] - p[2]);
   }
 
-  inline Point3D<T> operator+(Point3D<T> &p) {
+  inline Point3D<T> operator+(Point3D<T>& p) {
     return Point3D<T>(Coords[0] + p[0], Coords[1] + p[1], Coords[2] + p[2]);
   }
 
@@ -52,7 +62,7 @@ struct Triangle3D {
   short dummy = 0;
 
  public:
-  Point3D<T> &operator[](size_t index) { return Vertexes[index]; }
+  Point3D<T>& operator[](size_t index) { return Vertexes[index]; }
 };
 #pragma pack(pop)
 
@@ -62,22 +72,25 @@ class StlFile {
   virtual ~StlFile();
 
  public:
-  bool LoadFromStream(std::istream &is);
+  bool LoadFromStream(std::istream& is);
 
   void SaveAsBinary(std::ostream& os, std::string header);
   void SaveAsAscii(std::ostream& os, std::string header);
 
   size_t get_TriangleCount() { return m_vecFacets.size(); }
-  Triangle3D<float> &get_Triangle(size_t index) {
+  Triangle3D<float>& get_Triangle(size_t index) {
     assert(index < m_vecFacets.size());
     return m_vecFacets[index];
   }
 
   std::string get_Header();
 
+  void ToIndexedData(std::vector<float>& vertexes,
+                     std::vector<unsigned int>& indexes);
+
  private:
-  bool LoadBinaryFormatStream(std::istream &is);
-  bool LoadAsciiFormatStream(std::istream &is);
+  bool LoadBinaryFormatStream(std::istream& is);
+  bool LoadAsciiFormatStream(std::istream& is);
 
  private:
   std::string m_strHeader;

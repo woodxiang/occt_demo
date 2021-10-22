@@ -44,8 +44,8 @@
 #include <Wasm_Window.hxx>
 #include <iostream>
 
-#include "../model_factory.h"
 #include "../membuf.h"
+#include "../model_factory.h"
 #include "../stl_file.h"
 
 #define THE_CANVAS_ID "canvas"
@@ -869,17 +869,26 @@ bool OcctView::openStlFromMemory(const std::string &theName,
                                  uintptr_t theBuffer, int theDataLen,
                                  bool theToFree) {
   removeObject(theName);
-
+  OcctView &aViewer = Instance();
+  
   basic_membuf mb(reinterpret_cast<char *>(theBuffer), theDataLen);
 
   std::istream is(&mb);
 
-  StlFile stlFile;
-  
-  stlFile.LoadFromStream(is);
+  auto aShape = ModelFactory::GetInstance()->LoadFromStl(is);
 
-  assert(stlFile.get_TriangleCount() > 0);
+  Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
+  if (!theName.empty()) {
+    aViewer.myObjects.Add(theName.c_str(), aShapePrs);
+  }
+  aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
+  aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+  aViewer.View()->FitAll(0.01, false);
+  aViewer.UpdateView();
 
+  Message::DefaultMessenger()->Send(
+      TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
   return true;
 }
 
