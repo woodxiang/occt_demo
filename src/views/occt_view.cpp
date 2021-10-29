@@ -43,6 +43,7 @@
 #include <Standard_ArrayStreamBuffer.hxx>
 #include <Wasm_Window.hxx>
 #include <iostream>
+#include <STEPControl_Reader.hxx>
 
 #include "../membuf.h"
 #include "../model_factory.h"
@@ -791,8 +792,13 @@ bool OcctView::openFromMemory(const std::string &theName, uintptr_t theBuffer,
 
   if (dataStartsWithHeader(aBytes, "DBRep_DrawableShape")) {
     return openBRepFromMemory(theName, theBuffer, theDataLen, theToFree);
-  } else if (dataStartsWithHeader(aBytes, "solid")) {
+  }
+  else if (dataStartsWithHeader(aBytes, "solid")) {
     return openStlFromMemory(theName, theBuffer, theDataLen, theToFree);
+  }
+  else 
+  {
+      return openSTEPFromMemory(theName, theBuffer, theDataLen, theToFree);
   }
   if (theToFree) {
     free(aBytes);
@@ -805,7 +811,7 @@ bool OcctView::openFromMemory(const std::string &theName, uintptr_t theBuffer,
 
 void OcctView::testAction() {
   removeAllObjects();
-
+  
   std::string theName = "TestObject";
   OcctView &aViewer = Instance();
   auto aShape = ModelFactory::GetInstance()->MakeBottle(10, 20, 5);
@@ -856,6 +862,76 @@ bool OcctView::openBRepFromMemory(const std::string &theName,
   }
   aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
   aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+  aViewer.View()->FitAll(0.01, false);
+  aViewer.UpdateView();
+
+  Message::DefaultMessenger()->Send(
+      TCollection_AsciiString("Loaded file ") + theName.c_str(), Message_Info);
+  Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
+  return true;
+}
+
+// ================================================================
+// Function : openBRepFromMemory
+// Purpose  :
+// ================================================================
+bool OcctView::openSTEPFromMemory(const std::string &theName,
+                                  uintptr_t theBuffer, int theDataLen,
+                                  bool theToFree) {
+  removeObject(theName);
+
+  OcctView &aViewer = Instance();
+  bool isLoaded = false;
+  {
+    char *aRawData = reinterpret_cast<char *>(theBuffer);
+    Standard_ArrayStreamBuffer aStreamBuffer(aRawData, theDataLen);
+    std::istream aStream(&aStreamBuffer);
+    STEPControl_Reader aReader;
+    Standard_CString name = theName.c_str();
+    auto stat = aReader.ReadStream(name, aStream);
+    if ( stat == IFSelect_RetDone )
+    {
+      bool isFailsonly = false;
+      aReader.PrintCheckLoad( isFailsonly, IFSelect_ItemsByEntity );
+
+      int aNbRoot = aReader.NbRootsForTransfer();
+      aReader.PrintCheckTransfer( isFailsonly, IFSelect_ItemsByEntity );
+      for ( Standard_Integer n = 1; n <= aNbRoot; n++ )
+      {
+        Standard_Boolean ok = aReader.TransferRoot( n );
+        int aNbShap = aReader.NbShapes();
+        if ( aNbShap > 0 )
+        {
+          for ( int i = 1; i <= aNbShap; i++ )
+          {
+            TopoDS_Shape aShape = aReader.Shape( i );
+            Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
+            if (!theName.empty()) {
+              aViewer.myObjects.Add(theName.c_str(), aShapePrs);
+            }
+            aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
+            aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+          }
+        }
+      }
+    }
+    else
+    {
+      return false;
+    }
+
+read_done:
+
+    if (theToFree) {
+      free(aRawData);
+    }
+    isLoaded = true;
+  }
+  if (!isLoaded) {
+    return false;
+  }
+
+ 
   aViewer.View()->FitAll(0.01, false);
   aViewer.UpdateView();
 

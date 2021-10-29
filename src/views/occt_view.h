@@ -97,6 +97,10 @@ class OcctView : protected AIS_ViewController {
                                  uintptr_t theBuffer, int theDataLen,
                                  bool theToFree);
 
+  static bool openSTEPFromMemory(const std::string &theName,
+                                 uintptr_t theBuffer, int theDataLen,
+                                 bool theToFree);
+
   static bool openStlFromMemory(const std::string &theName,
                                  uintptr_t theBuffer, int theDataLen,
                                  bool theToFree);

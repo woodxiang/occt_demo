@@ -39,6 +39,10 @@
       />
     </div>
     <div>
+      <label for="stepInput">Choose STEP file to upload: </label>
+      <input type="file" id="stepInput" accept=".step" />
+    </div>
+    <div>
       <label for="stlInput">Choose STL file to upload:</label>
       <input type="file" id="stlInput" accept=".stl" />
     </div>
@@ -117,6 +121,29 @@
             true
           );
           //OccViewerModule._free (aDataBuffer); will be freed by called method
+          OccViewerModule.displayGround(true);
+        };
+        aReader.readAsArrayBuffer(aFile);
+      };
+
+      stepInput.onchange = function () {
+        if (stepInput.files.length == 0) {
+          return;
+        }
+
+        // Warning! Entire file is pre-loaded into memory.
+        const aFile = stepInput.files[0];
+        const aReader = new FileReader();
+        aReader.onload = function () {
+          const aDataArray = new Uint8Array(aReader.result);
+          const aDataBuffer = OccViewerModule._malloc(aDataArray.length);
+          OccViewerModule.HEAPU8.set(aDataArray, aDataBuffer);
+          OccViewerModule.openFromMemory(
+            aFile.name,
+            aDataBuffer,
+            aDataArray.length,
+            true
+          );
           OccViewerModule.displayGround(true);
         };
         aReader.readAsArrayBuffer(aFile);

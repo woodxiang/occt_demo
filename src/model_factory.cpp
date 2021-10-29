@@ -200,12 +200,32 @@ TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
   std::vector<unsigned int> indexes;
   stlFile.ToIndexedData(vertexes, indexes);
 
-  std::vector<unsigned int> edges;
+  std::vector<std::tuple<unsigned int, unsigned int>> edges;
+  std::vector<std::tuple<unsigned int, unsigned int, unsigned int>> triangles;
+
+  findEdges(indexes, edges, triangles);
 
   std::vector<gp_Pnt> points;
-  points.resize(vertexes.size() / 3);
-  for (size_t i = 0; i < points.size(); i++) {
+  points.reserve(vertexes.size() / 3);
+  for (size_t i = 0; i < vertexes.size() / 3; i++) {
     points.push_back(
         gp_Pnt(vertexes[i * 3], vertexes[i * 3 + 1], vertexes[i * 3 + 2]));
+  }
+
+  std::vector<TopoDS_Edge> topoEdges;
+  topoEdges.reserve(edges.size());
+  for (auto edge : edges) {
+    topoEdges.push_back(BRepBuilderAPI_MakeEdge(points[std::get<0>(edge)], points[std::get<1>(edge)]));
+  }
+
+  std::vector<TopoDS_Wire> topoWires;
+  topoWires.reserve(triangles.size());
+  for (auto triangle : triangles) {
+    auto topoWire = BRepBuilderAPI_MakeWire(
+        topoEdges[std::get<0>(triangle)], topoEdges[std::get<1>(triangle)],
+        topoEdges[std::get<2>(triangle)]);
+    topoWires.push_back(topoWire);
+
+    BRepBuilderAPI_MakeFace(topoWires);
   }
 }
