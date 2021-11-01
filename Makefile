@@ -34,8 +34,8 @@ all: js/demo_app.js
 	@echo $(MAKE_VERSION)
 
 
-js/demo_app.js: main.o model_factory.o stl_file.o help_algorithms.o $(lib1_OBJS)
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o model_factory.o stl_file.o help_algorithms.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1 $(EXPORT_METHODS) $(EXTERN_POST_JS) -s LLD_REPORT_UNDEFINED --bind
+js/demo_app.js: main.o model_factory.o stl_file.o help_algorithms.o RWStl_Stream_Reader.o $(lib1_OBJS)
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ main.o model_factory.o stl_file.o help_algorithms.o RWStl_Stream_Reader.o $(lib1_OBJS) -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1 $(EXPORT_METHODS) $(EXTERN_POST_JS) -s LLD_REPORT_UNDEFINED --bind
 
 clean:
 	$(RM) -r *.o js/*.wasm js/*.js src/views/*.o

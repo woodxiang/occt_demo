@@ -2,3 +2,6 @@
 *.js
 *.wasm
 src/__test__/stl_file_test
+.vscode/configurationCache.log
+.vscode/dryrun.log
+.vscode/targets.log
