@@ -12,6 +12,8 @@ static const size_t THE_BUFFER_SIZE = 1024;
 
 } // namespace
 
+IMPLEMENT_STANDARD_RTTIEXT(RWStl_Stream_Reader, RWStl_Reader)
+
 Standard_EXPORT Standard_Boolean RWStl_Stream_Reader::Read(
     Standard_IStream &inputStream, const Message_ProgressRange &readProgress) {
   inputStream.seekg(0, std::ios_base::end);
@@ -41,4 +43,34 @@ Standard_EXPORT Standard_Boolean RWStl_Stream_Reader::Read(
     inputStream >> std::ws; // skip any white spaces
   }
   return inputStream.fail();
+}
+
+Standard_Integer RWStl_Stream_Reader::AddNode(const gp_XYZ &thePnt) {
+  myNodes.Append(thePnt);
+  return myNodes.Size();
+}
+
+void RWStl_Stream_Reader::AddTriangle(Standard_Integer theNode1,
+                                      Standard_Integer theNode2,
+                                      Standard_Integer theNode3) {
+  myTriangles.Append(Poly_Triangle(theNode1, theNode2, theNode3));
+}
+
+Handle(Poly_Triangulation) RWStl_Stream_Reader::GetTriangulation() {
+  if (myTriangles.IsEmpty())
+    return Handle(Poly_Triangulation)();
+
+  Handle(Poly_Triangulation) aPoly = new Poly_Triangulation(
+      myNodes.Length(), myTriangles.Length(), Standard_False);
+  for (Standard_Integer aNodeIter = 0; aNodeIter < myNodes.Size();
+       ++aNodeIter) {
+    aPoly->SetNode(aNodeIter + 1, myNodes[aNodeIter]);
+  }
+
+  for (Standard_Integer aTriIter = 0; aTriIter < myTriangles.Size();
+       ++aTriIter) {
+    aPoly->SetTriangle(aTriIter + 1, myTriangles[aTriIter]);
+  }
+
+  return aPoly;
 }

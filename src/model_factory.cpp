@@ -3,7 +3,10 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepLib.hxx>
@@ -26,7 +29,8 @@
 #include <gp_Ax1.hxx>
 
 #include "help_algorithms.h"
-#include "stl_file.h"
+// #include "stl_file.h"
+#include "RWStl_Stream_Reader.h"
 
 ModelFactory::ModelFactory(/* args */) {}
 
@@ -192,6 +196,55 @@ TopoDS_Shape ModelFactory::MakeBottle(const Standard_Real myWidth,
 }
 
 TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
+  RWStl_Stream_Reader reader;
+  reader.Read(is);
+
+  auto triangulation = reader.GetTriangulation();
+  auto &nodes = triangulation->InternalNodes();
+  auto &triangles = triangulation->InternalTriangles();
+
+  BRep_Builder builder;
+  TopoDS_Compound compound;
+  builder.MakeCompound(compound);
+
+  for (Standard_Integer triIndex = triangles.Lower();
+       triIndex < triangles.Upper(); triIndex++) {
+    auto &triangle = triangles.Value(triIndex);
+    Standard_Integer nodeIndexes[3];
+    triangle.Get(nodeIndexes[0], nodeIndexes[1], nodeIndexes[2]);
+    const auto &p1 = nodes[nodeIndexes[0] - 1];
+    const auto &p2 = nodes[nodeIndexes[1] - 1];
+    const auto &p3 = nodes[nodeIndexes[2] - 1];
+
+    if ((!p1.IsEqual(p2, 0.0)) && !p1.IsEqual(p3, 0.0)) {
+      TopoDS_Vertex vertexes[] = {BRepBuilderAPI_MakeVertex(p1),
+                                  BRepBuilderAPI_MakeVertex(p2),
+                                  BRepBuilderAPI_MakeVertex(p3)};
+      TopoDS_Wire wire = BRepBuilderAPI_MakePolygon(vertexes[0], vertexes[1],
+                                                    vertexes[2], Standard_True);
+      if (!wire.IsNull()) {
+        TopoDS_Face face = BRepBuilderAPI_MakeFace(wire);
+        if (!face.IsNull()) {
+          builder.Add(compound, face);
+        }
+      }
+    }
+  }
+
+  // BRepBuilderAPI_Sewing sewing;
+  // sewing.Init();
+  // sewing.Load(compound);
+  // sewing.Perform();
+
+  // TopoDS_Shape shape = sewing.SewedShape();
+  // if (shape.IsNull()) {
+  //   shape = compound;
+  // }
+  return compound;
+}
+
+/*
+TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
   StlFile stlFile;
 
   stlFile.LoadFromStream(is);
@@ -203,7 +256,7 @@ TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
   std::vector<std::tuple<unsigned int, unsigned int>> edges;
   std::vector<std::tuple<unsigned int, unsigned int, unsigned int>> triangles;
 
-  findEdges(indexes, edges, triangles);
+  file_edges(indexes, edges, triangles);
 
   std::vector<gp_Pnt> points;
   points.reserve(vertexes.size() / 3);
@@ -215,7 +268,8 @@ TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
   std::vector<TopoDS_Edge> topoEdges;
   topoEdges.reserve(edges.size());
   for (auto edge : edges) {
-    topoEdges.push_back(BRepBuilderAPI_MakeEdge(points[std::get<0>(edge)], points[std::get<1>(edge)]));
+    topoEdges.push_back(BRepBuilderAPI_MakeEdge(points[std::get<0>(edge)],
+points[std::get<1>(edge)]));
   }
 
   std::vector<TopoDS_Wire> topoWires;
@@ -229,3 +283,4 @@ TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
     BRepBuilderAPI_MakeFace(topoWires);
   }
 }
+*/

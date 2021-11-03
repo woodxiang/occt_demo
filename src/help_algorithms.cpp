@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <string.h>
 
 /*
  * indexes is the index of vertexes
@@ -9,11 +10,11 @@
  * edges indicate by the vertex indexes
  * triangles indicate by the edges indexes
  */
-bool findEdges(
-    std::vector<unsigned int>& indexes,
-    std::vector<std::tuple<unsigned int, unsigned int>>& edges,
-    std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>&
-        triangles) {
+bool file_edges(
+    std::vector<unsigned int> &indexes,
+    std::vector<std::tuple<unsigned int, unsigned int>> &edges,
+    std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
+        &triangles) {
   // too large to process
   if (indexes.size() > 0x07fffffff) {
     return false;
@@ -54,7 +55,7 @@ bool findEdges(
   unsigned int targetSize = 0;
   for (size_t i = 0; i < sequence.size(); i++) {
     auto index = sequence[i];
-    auto& curPos = edgesTmp[index];
+    auto &curPos = edgesTmp[index];
     if (curPos != prevPos) {
       mapTo = index;
       targetSize++;
@@ -98,4 +99,15 @@ bool findEdges(
   }
 
   return true;
+}
+
+bool test_file_extension(const std::string &targetString,
+                         const std::string &subString) {
+  if (targetString.length() < subString.length()) {
+    return false;
+  }
+
+  return (::strcasecmp(targetString.c_str() + targetString.length() -
+                           subString.length(),
+                       subString.c_str())) == 0;
 }

@@ -40,11 +40,13 @@
 #include <Prs3d_DatumAspect.hxx>
 #include <Prs3d_ToolCylinder.hxx>
 #include <Prs3d_ToolDisk.hxx>
+#include <STEPControl_Reader.hxx>
 #include <Standard_ArrayStreamBuffer.hxx>
 #include <Wasm_Window.hxx>
 #include <iostream>
-#include <STEPControl_Reader.hxx>
+#include <string>
 
+#include "../help_algorithms.h"
 #include "../membuf.h"
 #include "../model_factory.h"
 #include "../stl_file.h"
@@ -99,7 +101,7 @@ struct CubemapAsyncLoader {
         Message_Fail);
   }
 };
-}  // namespace
+} // namespace
 
 // ================================================================
 // Function : Instance
@@ -140,25 +142,25 @@ OcctView::OcctView() : myDevicePixelRatio(1.0f), myUpdateRequests(0) {
   // arrow keys conflict with browser page scrolling, so better be avoided in
   // non-fullscreen mode
   addActionHotKeys(Aspect_VKey_NavLookUp,
-                   Aspect_VKey_Numpad8);  // Aspect_VKey_Up
+                   Aspect_VKey_Numpad8); // Aspect_VKey_Up
   addActionHotKeys(Aspect_VKey_NavLookDown,
-                   Aspect_VKey_Numpad2);  // Aspect_VKey_Down
+                   Aspect_VKey_Numpad2); // Aspect_VKey_Down
   addActionHotKeys(Aspect_VKey_NavLookLeft,
-                   Aspect_VKey_Numpad4);  // Aspect_VKey_Left
+                   Aspect_VKey_Numpad4); // Aspect_VKey_Left
   addActionHotKeys(Aspect_VKey_NavLookRight,
-                   Aspect_VKey_Numpad6);  // Aspect_VKey_Right
+                   Aspect_VKey_Numpad6); // Aspect_VKey_Right
   addActionHotKeys(
       Aspect_VKey_NavSlideLeft,
-      Aspect_VKey_Numpad1);  // Aspect_VKey_Left |Aspect_VKeyFlags_SHIFT
+      Aspect_VKey_Numpad1); // Aspect_VKey_Left |Aspect_VKeyFlags_SHIFT
   addActionHotKeys(
       Aspect_VKey_NavSlideRight,
-      Aspect_VKey_Numpad3);  // Aspect_VKey_Right|Aspect_VKeyFlags_SHIFT
+      Aspect_VKey_Numpad3); // Aspect_VKey_Right|Aspect_VKeyFlags_SHIFT
   addActionHotKeys(
       Aspect_VKey_NavSlideUp,
-      Aspect_VKey_Numpad9);  // Aspect_VKey_Up   |Aspect_VKeyFlags_SHIFT
+      Aspect_VKey_Numpad9); // Aspect_VKey_Up   |Aspect_VKeyFlags_SHIFT
   addActionHotKeys(
       Aspect_VKey_NavSlideDown,
-      Aspect_VKey_Numpad7);  // Aspect_VKey_Down |Aspect_VKeyFlags_SHIFT
+      Aspect_VKey_Numpad7); // Aspect_VKey_Down |Aspect_VKeyFlags_SHIFT
 }
 
 // ================================================================
@@ -323,9 +325,9 @@ bool OcctView::initViewer() {
 
   Handle(Aspect_DisplayConnection) aDisp;
   Handle(OpenGl_GraphicDriver) aDriver = new OpenGl_GraphicDriver(aDisp, false);
-  aDriver->ChangeOptions().buffersNoSwap = true;  // swap has no effect in WebGL
+  aDriver->ChangeOptions().buffersNoSwap = true; // swap has no effect in WebGL
   aDriver->ChangeOptions().buffersOpaqueAlpha =
-      true;  // avoid unexpected blending of canvas with page background
+      true; // avoid unexpected blending of canvas with page background
   if (!aDriver->InitContext()) {
     Message::DefaultMessenger()->Send(
         TCollection_AsciiString("Error: EGL initialization failed"),
@@ -466,8 +468,8 @@ void OcctView::handleViewRedraw(const Handle(AIS_InteractiveContext) & theCtx,
 // ================================================================
 EM_BOOL OcctView::onResizeEvent(int theEventType,
                                 const EmscriptenUiEvent *theEvent) {
-  (void)theEventType;  // EMSCRIPTEN_EVENT_RESIZE or
-                       // EMSCRIPTEN_EVENT_CANVASRESIZED
+  (void)theEventType; // EMSCRIPTEN_EVENT_RESIZE or
+                      // EMSCRIPTEN_EVENT_CANVASRESIZED
   (void)theEvent;
   if (myView.IsNull()) {
     return EM_FALSE;
@@ -578,7 +580,7 @@ bool OcctView::navigationKeyModifierSwitch(unsigned int theModifOld,
 EM_BOOL OcctView::onKeyDownEvent(int theEventType,
                                  const EmscriptenKeyboardEvent *theEvent) {
   if (myView.IsNull() ||
-      theEventType != EMSCRIPTEN_EVENT_KEYDOWN)  // EMSCRIPTEN_EVENT_KEYPRESS
+      theEventType != EMSCRIPTEN_EVENT_KEYDOWN) // EMSCRIPTEN_EVENT_KEYPRESS
   {
     return EM_FALSE;
   }
@@ -654,11 +656,11 @@ void OcctView::KeyUp(Aspect_VKey theKey, double theTime) {
 //==============================================================================
 bool OcctView::processKeyPress(Aspect_VKey theKey) {
   switch (theKey) {
-    case Aspect_VKey_F: {
-      myView->FitAll(0.01, false);
-      UpdateView();
-      return true;
-    }
+  case Aspect_VKey_F: {
+    myView->FitAll(0.01, false);
+    UpdateView();
+    return true;
+  }
   }
   return false;
 }
@@ -786,19 +788,12 @@ bool OcctView::openFromMemory(const std::string &theName, uintptr_t theBuffer,
     return false;
   }
 
-// Function to check if specified data stream starts with specified header.
-#define dataStartsWithHeader(theData, theHeader) \
-  (::strncmp(theData, theHeader, sizeof(theHeader) - 1) == 0)
-
-  if (dataStartsWithHeader(aBytes, "DBRep_DrawableShape")) {
+  if (test_file_extension(theName, ".brep")) {
     return openBRepFromMemory(theName, theBuffer, theDataLen, theToFree);
-  }
-  else if (dataStartsWithHeader(aBytes, "solid")) {
+  } else if (test_file_extension(theName, ".stl")) {
     return openStlFromMemory(theName, theBuffer, theDataLen, theToFree);
-  }
-  else 
-  {
-      return openSTEPFromMemory(theName, theBuffer, theDataLen, theToFree);
+  } else if (test_file_extension(theName, ".step")) {
+    return openSTEPFromMemory(theName, theBuffer, theDataLen, theToFree);
   }
   if (theToFree) {
     free(aBytes);
@@ -811,7 +806,7 @@ bool OcctView::openFromMemory(const std::string &theName, uintptr_t theBuffer,
 
 void OcctView::testAction() {
   removeAllObjects();
-  
+
   std::string theName = "TestObject";
   OcctView &aViewer = Instance();
   auto aShape = ModelFactory::GetInstance()->MakeBottle(10, 20, 5);
@@ -889,22 +884,18 @@ bool OcctView::openSTEPFromMemory(const std::string &theName,
     STEPControl_Reader aReader;
     Standard_CString name = theName.c_str();
     auto stat = aReader.ReadStream(name, aStream);
-    if ( stat == IFSelect_RetDone )
-    {
+    if (stat == IFSelect_RetDone) {
       bool isFailsonly = false;
-      aReader.PrintCheckLoad( isFailsonly, IFSelect_ItemsByEntity );
+      aReader.PrintCheckLoad(isFailsonly, IFSelect_ItemsByEntity);
 
       int aNbRoot = aReader.NbRootsForTransfer();
-      aReader.PrintCheckTransfer( isFailsonly, IFSelect_ItemsByEntity );
-      for ( Standard_Integer n = 1; n <= aNbRoot; n++ )
-      {
-        Standard_Boolean ok = aReader.TransferRoot( n );
+      aReader.PrintCheckTransfer(isFailsonly, IFSelect_ItemsByEntity);
+      for (Standard_Integer n = 1; n <= aNbRoot; n++) {
+        Standard_Boolean ok = aReader.TransferRoot(n);
         int aNbShap = aReader.NbShapes();
-        if ( aNbShap > 0 )
-        {
-          for ( int i = 1; i <= aNbShap; i++ )
-          {
-            TopoDS_Shape aShape = aReader.Shape( i );
+        if (aNbShap > 0) {
+          for (int i = 1; i <= aNbShap; i++) {
+            TopoDS_Shape aShape = aReader.Shape(i);
             Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
             if (!theName.empty()) {
               aViewer.myObjects.Add(theName.c_str(), aShapePrs);
@@ -914,13 +905,11 @@ bool OcctView::openSTEPFromMemory(const std::string &theName,
           }
         }
       }
-    }
-    else
-    {
+    } else {
       return false;
     }
 
-read_done:
+  read_done:
 
     if (theToFree) {
       free(aRawData);
@@ -931,7 +920,6 @@ read_done:
     return false;
   }
 
- 
   aViewer.View()->FitAll(0.01, false);
   aViewer.UpdateView();
 
@@ -946,7 +934,7 @@ bool OcctView::openStlFromMemory(const std::string &theName,
                                  bool theToFree) {
   removeObject(theName);
   OcctView &aViewer = Instance();
-  
+
   basic_membuf mb(reinterpret_cast<char *>(theBuffer), theDataLen);
 
   std::istream is(&mb);

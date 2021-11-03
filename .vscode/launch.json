@@ -5,10 +5,30 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "g++ - Build and debug active file",
+      "name": "stl_file_test",
       "type": "cppdbg",
       "request": "launch",
       "program": "${fileDirname}/stl_file_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${fileDirname}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "miDebuggerPath": "/bin/gdb"
+    },
+    {
+      "name": "RWStl_test",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${fileDirname}/RWStl_test",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${fileDirname}",
