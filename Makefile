@@ -18,7 +18,7 @@ freetype_LIB_DIR := $(EMSDK)/upstream/emscripten/cache/sysroot/lib
 
 OpenCASCADE_MODULES := freetype TKRWMesh TKBinXCAF TKBin TKBinL TKOpenGles TKXCAF TKVCAF TKCAF TKV3d TKHLR TKMesh \
 	TKService TKShHealing TKPrim TKTopAlgo TKGeomAlgo TKBRep TKGeomBase TKG3d TKG2d TKMath TKLCAF TKCDF TKernel TKFillet \
-	TKBool TKBO TKOffset TKXSBase TKSTEPBase TKSTEPAttr TKSTEP TKSTEP209 TKSTL
+	TKBool TKBO TKOffset TKXSBase TKSTEPBase TKSTEPAttr TKSTEP TKSTEP209 TKSTL TKMeshVS
 
 RUNTIME_METHOD_NAMES := ccall,cwrap,lengthBytesUTF8
 METHOD_NAMES := _main, _test
@@ -41,7 +41,7 @@ all: js/demo_app.js
 	@echo $(MAKE_VERSION)
 
 
-js/demo_app.js: main.o model_factory.o stl_file.o help_algorithms.o RWStl_Stream_Reader.o $(lib1_OBJS)
+js/demo_app.js: main.o model_factory.o stl_file.o help_algorithms.o RWStl_Stream_Reader.o XSDRAWSTLVRML_DataSource.o $(lib1_OBJS)
 	$(CXX) $(CPPFLAGS) $(CFLAGS) -o $@ $^ -L$(OpenCASCADE_LIB_DIR) $(LIBS) -s ALLOW_MEMORY_GROWTH=1 $(EXPORT_METHODS) $(EXTERN_POST_JS) -s LLD_REPORT_UNDEFINED --bind
 
 clean:

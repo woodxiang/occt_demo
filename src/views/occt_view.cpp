@@ -34,6 +34,7 @@
 #include <BRep_Builder.hxx>
 #include <Graphic3d_CubeMapPacked.hxx>
 #include <Image_AlienPixMap.hxx>
+#include <MeshVS_DisplayModeFlags.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
 #include <OpenGl_GraphicDriver.hxx>
@@ -939,14 +940,9 @@ bool OcctView::openStlFromMemory(const std::string &theName,
 
   std::istream is(&mb);
 
-  auto aShape = ModelFactory::GetInstance()->LoadFromStl(is);
-
-  Handle(AIS_Shape) aShapePrs = new AIS_Shape(aShape);
-  if (!theName.empty()) {
-    aViewer.myObjects.Add(theName.c_str(), aShapePrs);
-  }
-  aShapePrs->SetMaterial(Graphic3d_NameOfMaterial_Silver);
-  aViewer.Context()->Display(aShapePrs, AIS_Shaded, 0, false);
+  auto mesh = ModelFactory::GetInstance()->LoadFromStl(is);
+  mesh->SetDisplayMode(MeshVS_DMF_Shading);
+  aViewer.Context()->Display(mesh, Standard_True);
   aViewer.View()->FitAll(0.01, false);
   aViewer.UpdateView();
 

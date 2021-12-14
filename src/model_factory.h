@@ -1,12 +1,12 @@
 #pragma once
 
-#include <TopoDS_Shape.hxx>
-
+class TopoDS_Shape;
+class AIS_InteractiveObject;
 class ModelFactory {
- private:
+private:
   static ModelFactory *instance_;
 
- public:
+public:
   ModelFactory(/* args */);
   ~ModelFactory();
 
@@ -16,5 +16,5 @@ class ModelFactory {
                           const Standard_Real myHeight,
                           const Standard_Real myThickness);
 
-  TopoDS_Shape LoadFromStl(std::istream &is);
+  Handle(AIS_InteractiveObject) LoadFromStl(std::istream &is);
 };

@@ -1,5 +1,3 @@
-#include "model_factory.h"
-
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -21,6 +19,10 @@
 #include <Geom2d_TrimmedCurve.hxx>
 #include <Geom_CylindricalSurface.hxx>
 #include <Geom_Plane.hxx>
+#include <MeshVS_Drawer.hxx>
+#include <MeshVS_DrawerAttribute.hxx>
+#include <MeshVS_Mesh.hxx>
+#include <MeshVS_MeshPrsBuilder.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
@@ -31,6 +33,9 @@
 #include "help_algorithms.h"
 // #include "stl_file.h"
 #include "RWStl_Stream_Reader.h"
+#include "XSDRAWSTLVRML_DataSource.h"
+
+#include "model_factory.h"
 
 ModelFactory::ModelFactory(/* args */) {}
 
@@ -195,41 +200,56 @@ TopoDS_Shape ModelFactory::MakeBottle(const Standard_Real myWidth,
   return aRes;
 }
 
-TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
+Handle_AIS_InteractiveObject ModelFactory::LoadFromStl(std::istream &is) {
   RWStl_Stream_Reader reader;
   reader.Read(is);
 
   auto triangulation = reader.GetTriangulation();
-  auto &nodes = triangulation->InternalNodes();
-  auto &triangles = triangulation->InternalTriangles();
 
-  BRep_Builder builder;
-  TopoDS_Compound compound;
-  builder.MakeCompound(compound);
+  Handle(XSDRAWSTLVRML_DataSource) dataSource =
+      new XSDRAWSTLVRML_DataSource(triangulation);
 
-  for (Standard_Integer triIndex = triangles.Lower();
-       triIndex < triangles.Upper(); triIndex++) {
-    auto &triangle = triangles.Value(triIndex);
-    Standard_Integer nodeIndexes[3];
-    triangle.Get(nodeIndexes[0], nodeIndexes[1], nodeIndexes[2]);
-    const auto &p1 = nodes[nodeIndexes[0] - 1];
-    const auto &p2 = nodes[nodeIndexes[1] - 1];
-    const auto &p3 = nodes[nodeIndexes[2] - 1];
+  Handle(MeshVS_Mesh) mesh = new MeshVS_Mesh();
+  mesh->SetDataSource(dataSource);
+  mesh->AddBuilder(new MeshVS_MeshPrsBuilder(mesh), Standard_True);
 
-    if ((!p1.IsEqual(p2, 0.0)) && !p1.IsEqual(p3, 0.0)) {
-      TopoDS_Vertex vertexes[] = {BRepBuilderAPI_MakeVertex(p1),
-                                  BRepBuilderAPI_MakeVertex(p2),
-                                  BRepBuilderAPI_MakeVertex(p3)};
-      TopoDS_Wire wire = BRepBuilderAPI_MakePolygon(vertexes[0], vertexes[1],
-                                                    vertexes[2], Standard_True);
-      if (!wire.IsNull()) {
-        TopoDS_Face face = BRepBuilderAPI_MakeFace(wire);
-        if (!face.IsNull()) {
-          builder.Add(compound, face);
-        }
-      }
-    }
-  }
+  auto drawer = mesh->GetDrawer();
+  drawer->SetBoolean(MeshVS_DA_DisplayNodes, Standard_False);
+  drawer->SetBoolean(MeshVS_DA_ShowEdges, Standard_False);
+  mesh->SetMeshSelMethod(MeshVS_MSM_BOX);
+  return mesh;
+
+  // auto &nodes = triangulation->InternalNodes();
+  // auto &triangles = triangulation->InternalTriangles();
+
+  // BRep_Builder builder;
+  // TopoDS_Compound compound;
+  // builder.MakeCompound(compound);
+
+  // for (Standard_Integer triIndex = triangles.Lower();
+  //      triIndex < triangles.Upper(); triIndex++) {
+  //   auto &triangle = triangles.Value(triIndex);
+  //   Standard_Integer nodeIndexes[3];
+  //   triangle.Get(nodeIndexes[0], nodeIndexes[1], nodeIndexes[2]);
+  //   const auto &p1 = nodes[nodeIndexes[0] - 1];
+  //   const auto &p2 = nodes[nodeIndexes[1] - 1];
+  //   const auto &p3 = nodes[nodeIndexes[2] - 1];
+
+  //   if ((!p1.IsEqual(p2, 0.0)) && !p1.IsEqual(p3, 0.0)) {
+  //     TopoDS_Vertex vertexes[] = {BRepBuilderAPI_MakeVertex(p1),
+  //                                 BRepBuilderAPI_MakeVertex(p2),
+  //                                 BRepBuilderAPI_MakeVertex(p3)};
+  //     TopoDS_Wire wire = BRepBuilderAPI_MakePolygon(vertexes[0], vertexes[1],
+  //                                                   vertexes[2],
+  //                                                   Standard_True);
+  //     if (!wire.IsNull()) {
+  //       TopoDS_Face face = BRepBuilderAPI_MakeFace(wire);
+  //       if (!face.IsNull()) {
+  //         builder.Add(compound, face);
+  //       }
+  //     }
+  //   }
+  // }
 
   // BRepBuilderAPI_Sewing sewing;
   // sewing.Init();
@@ -240,7 +260,7 @@ TopoDS_Shape ModelFactory::LoadFromStl(std::istream &is) {
   // if (shape.IsNull()) {
   //   shape = compound;
   // }
-  return compound;
+  // return compound;
 }
 
 /*
