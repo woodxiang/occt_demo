@@ -52,7 +52,7 @@
 #include "../model_factory.h"
 #include "../stl_file.h"
 
-#define THE_CANVAS_ID "canvas"
+#define THE_CANVAS_ID "#occViewerCanvas"
 
 namespace {
 //! Auxiliary wrapper for loading model.

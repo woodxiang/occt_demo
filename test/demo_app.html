@@ -9,6 +9,7 @@
   <body>
     <h2>OCCT WebGL Viewer Sample</h2>
     <div>
+      <canvas>Other Canvas</canvas>
       <canvas
         id="occViewerCanvas"
         oncontextmenu="event.preventDefault()"
@@ -56,6 +57,7 @@
     <h4>Console output:</h4>
     <p id="output"></p>
     <script>
+      const element = document.querySelector("#occViewerCanvas");
       //! Resize canvas to fit into window.
       function updateCanvasSize() {
         // size of canvas in logical (density-independent) units
@@ -121,7 +123,7 @@
             true
           );
           //OccViewerModule._free (aDataBuffer); will be freed by called method
-          OccViewerModule.displayGround(true);
+          // OccViewerModule.displayGround(true);
         };
         aReader.readAsArrayBuffer(aFile);
       };
@@ -144,7 +146,7 @@
             aDataArray.length,
             true
           );
-          OccViewerModule.displayGround(true);
+          // OccViewerModule.displayGround(true);
         };
         aReader.readAsArrayBuffer(aFile);
       };
@@ -168,7 +170,7 @@
             true
           );
           //OccViewerModule._free (aDataBuffer); will be freed by called method
-          OccViewerModule.displayGround(true);
+          // OccViewerModule.displayGround(true);
         };
         aReader.readAsArrayBuffer(aFile);
       };
