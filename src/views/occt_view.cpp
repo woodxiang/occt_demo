@@ -174,9 +174,10 @@ OcctView::~OcctView() {}
 // Function : run
 // Purpose  :
 // ================================================================
-void OcctView::run() {
-  initWindow();
-  initViewer();
+void OcctView::run(std::string canvasId) {
+  TCollection_AsciiString theCanvasId(canvasId.c_str());
+  initWindow(theCanvasId);
+  initViewer(theCanvasId);
   initDemoScene();
   if (myView.IsNull()) {
     return;
@@ -197,9 +198,9 @@ void OcctView::run() {
 // Function : initWindow
 // Purpose  :
 // ================================================================
-void OcctView::initWindow() {
+void OcctView::initWindow(const TCollection_AsciiString &theCanvasId) {
   myDevicePixelRatio = emscripten_get_device_pixel_ratio();
-  myCanvasId = THE_CANVAS_ID;
+  myCanvasId = theCanvasId;
   const char *aTargetId = !myCanvasId.IsEmpty()
                               ? myCanvasId.ToCString()
                               : EMSCRIPTEN_EVENT_TARGET_WINDOW;
@@ -309,7 +310,7 @@ void OcctView::initPixelScaleRatio() {
 // Function : initViewer
 // Purpose  :
 // ================================================================
-bool OcctView::initViewer() {
+bool OcctView::initViewer(const TCollection_AsciiString &theCanvasId) {
   // Build with "--preload-file MyFontFile.ttf" option
   // and register font in Font Manager to use custom font(s).
   /*const char* aFontPath = "MyFontFile.ttf";
@@ -349,7 +350,7 @@ bool OcctView::initViewer() {
     }
   }
 
-  Handle(Wasm_Window) aWindow = new Wasm_Window(THE_CANVAS_ID);
+  Handle(Wasm_Window) aWindow = new Wasm_Window(theCanvasId);
   aWindow->Size(myWinSizeOld.x(), myWinSizeOld.y());
 
   myTextStyle = new Prs3d_TextAspect();

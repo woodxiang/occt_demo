@@ -20,15 +20,15 @@ OpenCASCADE_MODULES := freetype TKRWMesh TKBinXCAF TKBin TKBinL TKOpenGles TKXCA
 	TKService TKShHealing TKPrim TKTopAlgo TKGeomAlgo TKBRep TKGeomBase TKG3d TKG2d TKMath TKLCAF TKCDF TKernel TKFillet \
 	TKBool TKBO TKOffset TKXSBase TKSTEPBase TKSTEPAttr TKSTEP TKSTEP209 TKSTL TKMeshVS
 
-RUNTIME_METHOD_NAMES := ccall,cwrap,lengthBytesUTF8
-METHOD_NAMES := _main, _test
+RUNTIME_METHOD_NAMES := ccall,cwrap,allocate,lengthBytesUTF8,intArrayFromString
+METHOD_NAMES := _main, _initialize
 
 LIBS:= $(foreach V, $(OpenCASCADE_MODULES),	$(OpenCASCADE_LIB_DIR)/lib$(V).a)
 
 EXPORT_METHODS = -s EXPORTED_FUNCTIONS='[$(METHOD_NAMES)]' -s EXPORTED_RUNTIME_METHODS='[$(RUNTIME_METHOD_NAMES)]' \
 	-s EXPORT_NAME='createOccViewerModule' -s MODULARIZE=1 -s MAX_WEBGL_VERSION=2 --ts-typings
 
-EXTERN_POST_JS = --extern-post-js src/occt-webgl-viewer.js
+EXTERN_POST_JS = #--extern-post-js src/occt-webgl-viewer.js
 
 CPPFLAGS += -std=c++17 
 CPPFLAGS += -g -fdebug-compilation-dir="../"

@@ -33,11 +33,11 @@ class AIS_ViewCube;
 
 //! Sample class creating 3D Viewer within Emscripten canvas.
 class OcctView : protected AIS_ViewController {
- public:
+public:
   //! Return global viewer instance.
   static OcctView &Instance();
 
- public:  //! @name methods exported by Module
+public: //! @name methods exported by Module
   //! Set cubemap background.
   //! File will be loaded asynchronously.
   //! @param theImagePath [in] image path to load
@@ -101,11 +101,10 @@ class OcctView : protected AIS_ViewController {
                                  uintptr_t theBuffer, int theDataLen,
                                  bool theToFree);
 
-  static bool openStlFromMemory(const std::string &theName,
-                                 uintptr_t theBuffer, int theDataLen,
-                                 bool theToFree);
+  static bool openStlFromMemory(const std::string &theName, uintptr_t theBuffer,
+                                int theDataLen, bool theToFree);
 
- public:
+public:
   //! Default constructor.
   OcctView();
 
@@ -113,7 +112,7 @@ class OcctView : protected AIS_ViewController {
   virtual ~OcctView();
 
   //! Main application entry point.
-  void run();
+  void run(std::string canvasId);
 
   //! Return interactive context.
   const Handle(AIS_InteractiveContext) & Context() const { return myContext; }
@@ -127,12 +126,12 @@ class OcctView : protected AIS_ViewController {
   //! Request view redrawing.
   void UpdateView();
 
- private:
+private:
   //! Create window.
-  void initWindow();
+  void initWindow(const TCollection_AsciiString &theCanvasId);
 
   //! Create 3D Viewer.
-  bool initViewer();
+  bool initViewer(const TCollection_AsciiString &theCanvasId);
 
   //! Fill 3D Viewer with a DEMO items.
   void initDemoScene();
@@ -164,7 +163,7 @@ class OcctView : protected AIS_ViewController {
   void initPixelScaleRatio();
 
   //! @name Emscripten callbacks
- private:
+private:
   //! Window resize event.
   EM_BOOL onResizeEvent(int theEventType, const EmscriptenUiEvent *theEvent);
 
@@ -186,7 +185,7 @@ class OcctView : protected AIS_ViewController {
                        const EmscriptenKeyboardEvent *theEvent);
 
   //! @name Emscripten callbacks (static functions)
- private:
+private:
   static EM_BOOL onResizeCallback(int theEventType,
                                   const EmscriptenUiEvent *theEvent,
                                   void *theView) {
@@ -227,7 +226,7 @@ class OcctView : protected AIS_ViewController {
     return ((OcctView *)theView)->onKeyUpEvent(theEventType, theEvent);
   }
 
- private:
+private:
   //! Register hot-keys for specified Action.
   void addActionHotKeys(Aspect_VKey theAction, unsigned int theHotKey1 = 0,
                         unsigned int theHotKey2 = 0,
@@ -259,21 +258,21 @@ class OcctView : protected AIS_ViewController {
   //! Handle hot-key.
   bool processKeyPress(Aspect_VKey theKey);
 
- private:
+private:
   NCollection_IndexedDataMap<TCollection_AsciiString,
                              Handle(AIS_InteractiveObject)>
-      myObjects;  //!< map of named objects
+      myObjects; //!< map of named objects
 
   NCollection_DataMap<unsigned int, Aspect_VKey>
-      myNavKeyMap;  //!< map of Hot-Key (key+modifiers) to Action
+      myNavKeyMap; //!< map of Hot-Key (key+modifiers) to Action
 
-  Handle(AIS_InteractiveContext) myContext;  //!< interactive context
-  Handle(V3d_View) myView;                   //!< 3D view
-  Handle(Prs3d_TextAspect) myTextStyle;      //!< text style for OSD elements
-  Handle(AIS_ViewCube) myViewCube;           //!< view cube object
-  TCollection_AsciiString myCanvasId;        //!< canvas element id on HTML page
+  Handle(AIS_InteractiveContext) myContext; //!< interactive context
+  Handle(V3d_View) myView;                  //!< 3D view
+  Handle(Prs3d_TextAspect) myTextStyle;     //!< text style for OSD elements
+  Handle(AIS_ViewCube) myViewCube;          //!< view cube object
+  TCollection_AsciiString myCanvasId;       //!< canvas element id on HTML page
   Graphic3d_Vec2i myWinSizeOld;
-  float myDevicePixelRatio;       //!< device pixel ratio for handling high DPI
-                                  //!< displays
-  unsigned int myUpdateRequests;  //!< counter for unhandled update requests
+  float myDevicePixelRatio;      //!< device pixel ratio for handling high DPI
+                                 //!< displays
+  unsigned int myUpdateRequests; //!< counter for unhandled update requests
 };
