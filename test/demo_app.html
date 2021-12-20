@@ -180,6 +180,7 @@
       charset="utf-8"
     ></script>
     <script>
+      alert("create module object.");
       var OccViewerModule = {
         print: (function () {
           // var anElement = document.getElementById('output');
@@ -217,16 +218,11 @@
         },
       };
 
+      alert("start run wasm js");
       const OccViewerModuleInitialized = createOccViewerModule(OccViewerModule);
       OccViewerModuleInitialized.then(function (Module) {
-        //OccViewerModule.setCubemapBackground ("cubemap.jpg");
-        //OccViewerModule.openFromUrl ("ball", "samples/Ball.brep");
-        const ptr = Module.allocate(
-          Module.intArrayFromString("#occViewerCanvas"),
-          0
-        );
-        Module._initialize(ptr);
-        Module._free(ptr);
+        alert("init view after load wasm")
+        Module.initialize("#occViewerCanvas");
       });
     </script>
   </body>

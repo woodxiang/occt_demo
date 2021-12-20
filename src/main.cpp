@@ -10,6 +10,7 @@
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
+#include <emscripten/bind.h>
 
 //! Dummy main loop callback for a single shot.
 extern "C" void onMainLoop() {
@@ -17,10 +18,14 @@ extern "C" void onMainLoop() {
   emscripten_cancel_main_loop();
 }
 
-extern "C" void initialize(char *canvasId) {
+void initialize(std::string canvasId) {
   OcctView &aViewer = OcctView::Instance();
   aViewer.run(canvasId);
   Message::DefaultMessenger()->Send(OSD_MemInfo::PrintInfo(), Message_Trace);
+}
+
+EMSCRIPTEN_BINDINGS(mainModule){
+  emscripten::function("initialize", &initialize);
 }
 
 EMSCRIPTEN_KEEPALIVE int main() {

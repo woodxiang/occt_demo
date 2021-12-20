@@ -21,7 +21,7 @@ OpenCASCADE_MODULES := freetype TKRWMesh TKBinXCAF TKBin TKBinL TKOpenGles TKXCA
 	TKBool TKBO TKOffset TKXSBase TKSTEPBase TKSTEPAttr TKSTEP TKSTEP209 TKSTL TKMeshVS
 
 RUNTIME_METHOD_NAMES := ccall,cwrap,allocate,lengthBytesUTF8,intArrayFromString
-METHOD_NAMES := _main, _initialize
+METHOD_NAMES := _main
 
 LIBS:= $(foreach V, $(OpenCASCADE_MODULES),	$(OpenCASCADE_LIB_DIR)/lib$(V).a)
 
