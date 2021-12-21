@@ -1,5 +1,5 @@
 
-BUILD_DEBUG:=false
+BUILD_DEBUG := true
 
 lib1_SRCS := $(wildcard src/views/*.cpp)
 lib1_OBJS := $(lib1_SRCS:.cpp=.o)
@@ -25,13 +25,21 @@ METHOD_NAMES := _main
 
 LIBS:= $(foreach V, $(OpenCASCADE_MODULES),	$(OpenCASCADE_LIB_DIR)/lib$(V).a)
 
-EXPORT_METHODS = -s EXPORTED_FUNCTIONS='[$(METHOD_NAMES)]' -s EXPORTED_RUNTIME_METHODS='[$(RUNTIME_METHOD_NAMES)]' \
+#EXPORT_METHODS = -s EXPORTED_FUNCTIONS='[$(METHOD_NAMES)]' -s EXPORTED_RUNTIME_METHODS='[$(RUNTIME_METHOD_NAMES)]' \
 	-s EXPORT_NAME='createOccViewerModule' -s MODULARIZE=1 -s MAX_WEBGL_VERSION=2 --ts-typings
+
+EXPORT_METHODS = -s EXPORT_NAME='createOccViewerModule' -s MODULARIZE=1 -s MAX_WEBGL_VERSION=2 --ts-typings
 
 EXTERN_POST_JS = #--extern-post-js src/occt-webgl-viewer.js
 
 CPPFLAGS += -std=c++17 
-CPPFLAGS += -g -fdebug-compilation-dir="../"
+
+ifeq ($(BUILD_DEBUG),true)
+	CPPFLAGS += -g -fdebug-compilation-dir="../" -fsanitize=address
+else 
+	CPPFLAGS += -O3 -DNDEBUG
+endif 
+
 CPPFLAGS += -I$(OpenCASCADE_INCLUDE_DIR)
 
 %.o: src/%.cpp
